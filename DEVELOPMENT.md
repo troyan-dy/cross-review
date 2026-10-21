@@ -131,8 +131,9 @@ skills/cross-review/
 
 ```sh
 python3 -B -m unittest discover -s skills/cross-review/scripts/tests
-ruff check skills
+ruff check .
 bash -n skills/cross-review/scripts/codex_run.sh
+python3 .github/scripts/check_manifests.py
 claude plugin validate .claude-plugin/plugin.json
 claude plugin validate .
 ```

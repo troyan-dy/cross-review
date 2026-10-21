@@ -40,9 +40,9 @@
 
 ### 4. CI и проверки
 
-- [ ] `ruff.toml` под стиль скриптов, `ruff check` чистый
-- [ ] GitHub Actions: unittest на Python 3.9 и 3.13 (ubuntu, macOS), ruff, `bash -n` для `codex_run.sh`
-- [ ] `claude plugin validate .` проходит для плагина и маркетплейса
+- [x] `ruff.toml` под стиль скриптов, `ruff check` чистый
+- [x] GitHub Actions: unittest на Python 3.9 и 3.13 (ubuntu, macOS), ruff, `bash -n` для `codex_run.sh`, сверка манифестов и CHANGELOG
+- [x] `claude plugin validate .` проходит для плагина и маркетплейса
 - [ ] прогон CI на GitHub зелёный
 
 ### 5. Выпуск

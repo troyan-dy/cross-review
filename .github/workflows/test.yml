@@ -1,0 +1,44 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: unittest (${{ matrix.os }}, python ${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, python: "3.9" }
+          - { os: ubuntu-latest, python: "3.13" }
+          # macOS держит bash 3.2 — на нём должен работать codex_run.sh
+          - { os: macos-latest, python: "3.13" }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: unittest
+        run: python -B -m unittest discover -s skills/cross-review/scripts/tests
+      - name: bash -n codex_run.sh
+        run: /bin/bash -n skills/cross-review/scripts/codex_run.sh
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: ruff
+        run: pipx run ruff==0.9.3 check .
+      - name: manifests
+        run: python .github/scripts/check_manifests.py
