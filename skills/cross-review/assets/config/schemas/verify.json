@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "cross-review verification verdicts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["verdicts"],
+  "properties": {
+    "verdicts": {
+      "type": "array",
+      "description": "one entry per finding you were given, and no entry for a finding you were not given",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "verdict"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "the id of the finding this verdict applies to, copied exactly"
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["confirmed", "refined", "rejected", "immaterial", "pre_existing"],
+            "description": "confirmed keeps the finding as-is, refined keeps it with the corrections below, rejected drops it as wrong, immaterial drops it as technically true but not worth acting on, pre_existing moves it out as a problem the change under review did not introduce"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "corrected anchor line, only for a refined verdict"
+          },
+          "end_line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "corrected last line of the range, only for a refined verdict"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor"],
+            "description": "corrected severity, only for a refined verdict"
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "corrected confidence, only for a refined verdict"
+          },
+          "title": {
+            "type": "string",
+            "description": "corrected title, only for a refined verdict"
+          },
+          "body": {
+            "type": "string",
+            "description": "corrected explanation, only for a refined verdict"
+          },
+          "fix": {
+            "type": "string",
+            "description": "corrected fix, only for a refined verdict"
+          },
+          "reason": {
+            "type": "string",
+            "description": "why you reached this verdict, in one line"
+          }
+        }
+      }
+    }
+  }
+}

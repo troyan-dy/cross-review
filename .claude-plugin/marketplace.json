@@ -1,0 +1,16 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-marketplace.json",
+  "name": "cross-review",
+  "description": "Cross-vendor code review for Claude Code: Claude and Codex review a change and debate each other's findings",
+  "owner": {
+    "name": "Dmitriy Troyan",
+    "url": "https://github.com/troyan-dy"
+  },
+  "plugins": [
+    {
+      "name": "cross-review",
+      "source": "./",
+      "description": "Claude and Codex review the same change with the same lenses, then cross-examine each other's findings with a moderator"
+    }
+  ]
+}

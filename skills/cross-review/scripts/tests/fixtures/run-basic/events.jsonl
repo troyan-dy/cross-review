@@ -1,0 +1,5 @@
+{"kind": "stage", "stage": "find", "at": "2026-10-20T10:00:00+03:00"}
+{"kind": "agent_started", "agent": "bugs-claude", "text": "started", "at": "2026-10-20T10:00:01+03:00"}
+{"kind": "stage", "stage": "synthesis", "at": "2026-10-20T10:04:00+03:00"}
+{"kind": "dropped", "agent": "synthesis", "text": "1 findings dropped", "findings": [{"id": "arch-codex-2", "file": "docs/guide.md", "line": 3, "end_line": 5, "severity": "minor", "confidence": 60, "title": "Опечатка в примере команды", "body": "Синтетическое описание: Опечатка в примере команды.", "fix": "Синтетическое исправление для arch-codex-2.", "sources": ["arch-codex"], "lenses": ["architecture", "quality"], "verdict": ""}], "at": "2026-10-20T10:04:30+03:00"}
+{"kind": "stage", "stage": "verify", "at": "2026-10-20T10:04:31+03:00"}

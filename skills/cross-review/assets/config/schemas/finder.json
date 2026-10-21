@@ -1,0 +1,78 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "cross-review finder findings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "findings"
+  ],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "description": "every problem found, most severe first; an empty array is a valid answer",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "file",
+          "line",
+          "severity",
+          "confidence",
+          "title",
+          "body",
+          "lenses"
+        ],
+        "properties": {
+          "file": {
+            "type": "string",
+            "description": "path of the file the finding is in, relative to the working directory"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "1-indexed anchor line, or 0 for a file-level finding with no single line"
+          },
+          "end_line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "last line of the range, or 0 when the finding is a single line"
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "major",
+              "minor"
+            ],
+            "description": "critical breaks correctness or security, major is a real defect, minor is a smaller problem worth fixing"
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "how sure you are the problem is real, 0-100, scored on how far you actually verified it. 40 \u2014 it looks wrong from reading, but you did not confirm it. 60 \u2014 you confirmed the code says what you claim, but not that the failure follows. 85 \u2014 you traced the path from an input the code accepts to the failure. 95 \u2014 you traced it and something independent confirms it: a test, a run, or a written rule naming this case. If you did not open the code and follow it through, you are below 60. This measures whether the finding is real and nothing else \u2014 how bad it would be and how often it happens are severity's job, not this field's."
+          },
+          "title": {
+            "type": "string",
+            "description": "one line naming the problem"
+          },
+          "body": {
+            "type": "string",
+            "description": "what is wrong and what it causes, with the concrete failure case"
+          },
+          "fix": {
+            "type": "string",
+            "description": "the smallest change that resolves it, empty when there is no obvious fix"
+          },
+          "lenses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "the lenses you carry that raised this finding, using only lens names you were given"
+          }
+        }
+      }
+    }
+  }
+}

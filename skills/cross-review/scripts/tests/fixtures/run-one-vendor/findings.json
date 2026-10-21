@@ -1,0 +1,111 @@
+{
+  "scope": {
+    "task": "demo",
+    "run": "02-claude-only",
+    "scope_path": "input/scope.md"
+  },
+  "sources": {
+    "expected": 2,
+    "reported": 2,
+    "degraded": [],
+    "agents": [
+      {
+        "name": "bugs-claude",
+        "lenses": [
+          "bugs",
+          "impl"
+        ],
+        "executor": "claude",
+        "requested_model": "opus",
+        "actual_model": "claude-opus-5-5",
+        "effort": "high",
+        "tokens": 0,
+        "raised": 1,
+        "degraded": false
+      },
+      {
+        "name": "arch-claude",
+        "lenses": [
+          "architecture",
+          "quality"
+        ],
+        "executor": "claude",
+        "requested_model": "opus",
+        "actual_model": "claude-opus-5-5",
+        "effort": "high",
+        "tokens": 0,
+        "raised": 1,
+        "degraded": false
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "bugs-claude-1",
+      "file": "app/store.py",
+      "line": 42,
+      "end_line": 44,
+      "severity": "major",
+      "confidence": 90,
+      "title": "Повтор записи теряет данные",
+      "body": "Синтетическое описание: Повтор записи теряет данные.",
+      "fix": "Синтетическое исправление для bugs-claude-1.",
+      "sources": [
+        "bugs-claude"
+      ],
+      "lenses": [
+        "bugs",
+        "impl"
+      ],
+      "verdict": "unverified"
+    },
+    {
+      "id": "arch-claude-1",
+      "file": "app/models.py",
+      "line": 5,
+      "end_line": 7,
+      "severity": "minor",
+      "confidence": 85,
+      "title": "Модель хранит и данные, и транспорт",
+      "body": "Синтетическое описание: Модель хранит и данные, и транспорт.",
+      "fix": "Синтетическое исправление для arch-claude-1.",
+      "sources": [
+        "arch-claude"
+      ],
+      "lenses": [
+        "architecture",
+        "quality"
+      ],
+      "verdict": "unverified"
+    }
+  ],
+  "open_questions": [],
+  "pre_existing": [],
+  "immaterial": [],
+  "stats": {
+    "started_at": "2026-10-20T10:00:00+03:00",
+    "finished_at": "2026-10-20T10:06:00+03:00",
+    "duration_ms": 360000,
+    "tokens": 0,
+    "stages": [
+      {
+        "name": "find",
+        "duration_ms": 240000
+      },
+      {
+        "name": "synthesis",
+        "duration_ms": 30000,
+        "executor": "claude",
+        "model": "opus",
+        "effort": "high"
+      },
+      {
+        "name": "verify",
+        "duration_ms": 90000,
+        "executor": "claude",
+        "model": "opus",
+        "effort": "high"
+      }
+    ]
+  }
+}

@@ -1,0 +1,356 @@
+<title>{{TITLE}}</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: одна колонка отчёта шириной ~860px — сводка, ход обсуждения, переоценка приоритетов, фильтры, список пунктов с перепиской */
+:root {
+  --bg: #f4f6f9;
+  --surface: #ffffff;
+  --sunken: #eef1f5;
+  --fg: #18202d;
+  --muted: #586274;
+  --line: #dce1e8;
+  --accent: #2a55c0;
+  --claude: #7547c2;
+  --codex: #0b7f6b;
+  --moderator: #8a5a00;
+  --critical: #c42b2b;
+  --major: #b86a00;
+  --minor: #5d6b80;
+  --none: #9aa3b0;
+  /* только системные шрифты: страница не ходит в сеть */
+  --font-display: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-body: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f131a; --surface: #161b24; --sunken: #1c2230; --fg: #e5e8ee; --muted: #9aa3b3; --line: #2a3242;
+    --accent: #84a6ff; --claude: #b58dff; --codex: #3fc9a9; --moderator: #e0aa4a;
+    --critical: #ff6f6f; --major: #f0a33c; --minor: #9aa8bb; --none: #6b7484; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f131a; --surface: #161b24; --sunken: #1c2230; --fg: #e5e8ee; --muted: #9aa3b3; --line: #2a3242;
+  --accent: #84a6ff; --claude: #b58dff; --codex: #3fc9a9; --moderator: #e0aa4a;
+  --critical: #ff6f6f; --major: #f0a33c; --minor: #9aa8bb; --none: #6b7484; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--font-body); font-size: 15px; line-height: 1.55;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 880px; margin: 0 auto; display: flex; flex-direction: column; gap: 36px; }
+h1 { font-family: var(--font-display); font-weight: 700; font-size: clamp(26px, 5vw, 36px); line-height: 1.15; margin: 0; text-wrap: balance; letter-spacing: -0.01em; }
+h2 { font-size: 19px; font-weight: 700; margin: 0; text-wrap: balance; }
+p { margin: 0; }
+code, .mono { font-family: var(--font-mono); font-size: 0.86em; }
+code { background: var(--sunken); padding: 0.05em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+.eyebrow { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 600; }
+.lede { color: var(--muted); max-width: 68ch; }
+header { display: flex; flex-direction: column; gap: 12px; }
+
+/* Сводка */
+.summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.stat .num { font-size: 30px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+.stat .lbl { font-weight: 600; }
+.stat .sub { color: var(--muted); font-size: 13px; }
+.sevbar { display: flex; height: 6px; border-radius: 3px; overflow: hidden; background: var(--sunken); }
+.sevbar span { display: block; height: 100%; }
+
+/* Ход обсуждения */
+.flow { display: flex; flex-direction: column; gap: 10px; }
+.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.step { border-top: 3px solid var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 4px; font-size: 14px; }
+.step b { font-size: 14px; }
+.step .muted { color: var(--muted); }
+.side-claude { color: var(--claude); font-weight: 600; }
+.side-codex { color: var(--codex); font-weight: 600; }
+
+/* Фильтры */
+.filters { display: flex; flex-direction: column; gap: 10px; position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--bg); padding-block: 10px; border-bottom: 1px solid var(--line); }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.chips .k { font-size: 12px; color: var(--muted); min-width: 92px; }
+.chip { font: inherit; font-size: 13px; border: 1px solid var(--line); background: var(--surface); color: var(--fg); border-radius: 999px; padding: 3px 11px; cursor: pointer; }
+.chip[aria-pressed="true"] { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.chip:focus-visible, .card summary:focus-visible, #q:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#q { font: inherit; font-size: 14px; width: 100%; max-width: 360px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); color: var(--fg); }
+.shown { font-size: 13px; color: var(--muted); }
+
+/* Карточки */
+.list { display: flex; flex-direction: column; gap: 10px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--sev); border-radius: 8px; }
+.card summary { list-style: none; cursor: pointer; padding: 12px 16px; display: flex; flex-direction: column; gap: 6px; }
+.card summary::-webkit-details-marker { display: none; }
+.card .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.card .title { font-weight: 600; font-size: 15px; min-width: 0; overflow-wrap: anywhere; }
+.card .loc { font-family: var(--font-mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.pill { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 4px; color: var(--surface); background: var(--sev); }
+.tag { font-size: 12px; padding: 1px 8px; border-radius: 4px; border: 1px solid var(--line); color: var(--muted); }
+.tag.disputed { border-color: var(--moderator); color: var(--moderator); }
+.tag.dropped { text-decoration: line-through; }
+.tag.shift { font-family: var(--font-mono); font-size: 11px; }
+.tag.shift-raised { border-color: var(--critical); color: var(--critical); }
+.tag.shift-lowered { border-color: var(--accent); color: var(--accent); }
+.tag.shift-dropped { border-color: var(--none); color: var(--none); }
+.who { font-size: 12px; color: var(--muted); }
+.body { padding: 0 16px 16px; display: flex; flex-direction: column; gap: 14px; }
+.body .text { max-width: 72ch; overflow-wrap: anywhere; }
+.fix { background: var(--sunken); border-radius: 6px; padding: 10px 12px; font-size: 14px; overflow-wrap: anywhere; }
+.fix b { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); display: block; margin-bottom: 2px; }
+.thread { display: flex; flex-direction: column; gap: 10px; border-left: 2px solid var(--line); padding-left: 14px; margin-left: 2px; }
+.msg { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.msg .head { font-size: 13px; font-weight: 600; }
+.msg .head .st { font-weight: 500; color: var(--muted); }
+.msg .arg { font-size: 14px; overflow-wrap: anywhere; }
+.msg .ev { font-family: var(--font-mono); font-size: 12px; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+.msg.claude .head .n { color: var(--claude); }
+.msg.codex .head .n { color: var(--codex); }
+.msg.moderator .head .n { color: var(--moderator); }
+.msg.pipeline .head { color: var(--muted); font-weight: 500; }
+.sev-critical { --sev: var(--critical); }
+.sev-major { --sev: var(--major); }
+.sev-minor { --sev: var(--minor); }
+.sev-none { --sev: var(--none); }
+.empty { color: var(--muted); padding: 20px 0; }
+
+/* Переоценка приоритетов */
+.shifts { display: flex; flex-direction: column; gap: 10px; }
+.shift-counts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.shift-row { display: grid; grid-template-columns: 140px 1fr; gap: 12px; font-size: 14px; align-items: baseline; }
+.shift-row .mono { color: var(--muted); }
+.shift-row a { overflow-wrap: anywhere; }
+
+/* Известные пункты и подвал */
+.known { display: flex; flex-direction: column; gap: 8px; }
+.known .k-row { display: grid; grid-template-columns: 72px 1fr; gap: 12px; font-size: 14px; align-items: baseline; }
+.known .k-row .mono { color: var(--muted); }
+footer { color: var(--muted); font-size: 13px; display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line); padding-top: 16px; }
+footer code { font-size: 12px; }
+a { color: var(--accent); }
+@media (max-width: 520px) { .chips .k { min-width: 100%; } .known .k-row, .shift-row { grid-template-columns: 1fr; gap: 2px; } }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow" id="eyebrow"></div>
+    <h1>{{TITLE}}</h1>
+    <p class="lede" id="lede"></p>
+  </header>
+
+  <section class="summary" id="summary" aria-label="Сводка"></section>
+
+  <section class="flow" aria-label="Как шло обсуждение">
+    <h2>Как шло обсуждение</h2>
+    <div class="steps" id="steps"></div>
+  </section>
+
+  <section class="shifts" id="shifts" aria-label="Переоценка приоритетов">
+    <h2>Переоценка приоритетов</h2>
+    <p class="lede" id="shifts-lede"></p>
+    <div class="shift-counts" id="shift-counts"></div>
+    <div class="known" id="shift-list"></div>
+  </section>
+
+  <section style="display:flex;flex-direction:column;gap:12px">
+    <h2>Пункты</h2>
+    <div class="filters" role="group" aria-label="Фильтры">
+      <div class="chips" id="f-sev"><span class="k">Серьёзность</span></div>
+      <div class="chips" id="f-out"><span class="k">Итог</span></div>
+      <div class="chips" id="f-area"><span class="k">Область</span></div>
+      <div class="chips"><span class="k">Поиск</span><input id="q" type="search" placeholder="файл, функция, слово" aria-label="Поиск по пунктам"></div>
+      <div class="shown" id="shown"></div>
+    </div>
+    <div class="list" id="list"></div>
+  </section>
+
+
+  <footer>
+    <div id="foot-how"></div>
+    <div id="foot-data"></div>
+  </footer>
+</div>
+
+<script>
+const DATA = /*__DATA__*/null;
+const SEV = { critical: "critical", major: "major", minor: "minor", none: "снято" };
+const OUT_SHORT = { consensus: "консенсус", confirmed: "подтверждено", restored: "восстановлено после отсева", refined: "уточнено", disputed: "спор", side: "найдено в споре", unexamined: "не проверено", question: "вопрос", dropped: "снято" };
+const DISPUTE = (i) => (i.moderated ? "спор, решил модератор" : i.moderators_split ? "модераторы не сошлись, решает человек" : "спор, ждёт модератора");
+const SHIFT = { raised: "Повышено", lowered: "Понижено", dropped: "Снято" };
+const SHIFT_SUB = { raised: "серьёзность выросла после проверки по коду", lowered: "серьёзность снизилась после проверки по коду", dropped: "пункт снят: чинить не нужно" };
+const BY = { side: "по вердикту проверяющей стороны", author: "уточнил автор, проверяющая сторона согласна", moderator: "решил модератор", none: "" };
+const OUT_ORDER = ["consensus", "confirmed", "restored", "refined", "disputed", "side", "unexamined", "question", "dropped"];
+const STANCE = { real: "подтверждаю", real_but_different: "есть, но иначе", not_real: "не подтверждаю", not_worth_fixing: "не стоит чинить" };
+const POSITION = { concede: "соглашаюсь", defend: "настаиваю", amend: "уточняю" };
+const STATUS = {
+  unverified: "стадия проверки пропущена",
+  side_finding: "поднято по ходу обсуждения",
+  open_question: "открытый вопрос, не дефект",
+  confirmed: "верификатор подтвердил",
+  refined: "верификатор подтвердил с уточнением",
+  immaterial: "верификатор: верно, но незначительно",
+  rejected_by_verify: "верификатор отклонил",
+  dropped_by_synthesis: "склейка отбросила как слабую, верификатор не смотрел",
+  pre_existing: "верификатор: дефект до изменения",
+};
+const SIDE = { claude: "Claude", codex: "Codex", "claude+codex": "Claude и Codex" };
+
+// всё из DATA попадает в разметку только через esc или md: и текст, и значения классов, и числа
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const md = (s) => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>").replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+// подпись по словарю, а для значения вне словаря — оно само, экранированное
+const label = (dict, key) => esc(dict[key] ?? key);
+// число с формой существительного: 1 пункт, 2 пункта, 5 пунктов, 21 пункт
+const pl = (n, one, few, many) => {
+  const d = n % 10, h = n % 100;
+  return `${n} ${d === 1 && h !== 11 ? one : d >= 2 && d <= 4 && (h < 12 || h > 14) ? few : many}`;
+};
+const short = (f) => { const p = meta.strip_prefix || ""; const s = String(f ?? ""); return p && s.startsWith(p) ? s.slice(p.length) : s; };
+const items = DATA.items.concat(DATA.questions || []);
+const meta = DATA.meta;
+
+document.getElementById("eyebrow").textContent = meta.eyebrow || "";
+document.getElementById("foot-how").innerHTML = md(meta.footer_how || "");
+document.getElementById("foot-data").innerHTML = md(meta.footer_data || "");
+
+// Сводка
+// к исправлению только решённое: не «не проверено», не спор, который модератор ещё не решил, и не дефект до изменения
+const fix = items.filter((i) => !["dropped", "question", "unexamined"].includes(i.outcome) && i.final_severity !== "none"
+  && (i.outcome !== "disputed" || i.moderated) && i.status !== "pre_existing");
+const disputed = items.filter((i) => i.outcome === "disputed");
+const dropped = items.filter((i) => i.outcome === "dropped");
+const bySev = (list) => ["critical", "major", "minor"].map((s) => list.filter((i) => i.final_severity === s).length);
+const [fc, fm, fn] = bySev(fix);
+document.getElementById("lede").innerHTML = md(meta.lede || "");
+const stat = (num, lbl, sub, bar) =>
+  `<div class="stat"><div class="num">${num}</div><div class="lbl">${lbl}</div><div class="sub">${sub}</div>${bar || ""}</div>`;
+const bar = (c, m, n) => {
+  const t = c + m + n || 1;
+  return `<div class="sevbar" aria-hidden="true"><span style="width:${(c / t) * 100}%;background:var(--critical)"></span><span style="width:${(m / t) * 100}%;background:var(--major)"></span><span style="width:${(n / t) * 100}%;background:var(--minor)"></span></div>`;
+};
+document.getElementById("summary").innerHTML =
+  stat(fix.length, "Чинить", `${fc} critical · ${fm} major · ${fn} minor`, bar(fc, fm, fn)) +
+  stat(items.filter((i) => i.outcome === "consensus").length, "Консенсус", "нашли и Claude, и Codex независимо") +
+  stat(disputed.length, "Спор", disputed.length ? (disputed.every((i) => i.moderated) ? "стороны не сошлись во втором раунде, решил модератор" : "стороны не сошлись, часть решает модератор или человек") : "все разногласия закрыты во втором раунде") +
+  stat(dropped.length, "Снято", "автор находки согласился с возражением");
+
+// Ход обсуждения
+const n = (o) => items.filter((i) => i.outcome === o).length;
+const round2 = items.filter((i) => i.thread.some((t) => t.kind === "respond")).length;
+const agentsLine = meta.agents.map((a) => `<span class="side-${esc(a.executor)}">${esc(a.name)}</span> (${esc(a.actual_model || a.requested_model || "")}) ${esc(a.raised)}`).join(", ");
+const rescued = items.filter((i) => ["dropped_by_synthesis", "rejected_by_verify", "immaterial"].includes(i.status)).length;
+const examinedClaude = items.filter((i) => i.thread.some((t) => t.kind === "examine" && t.side === "claude")).length;
+const examinedCodex = items.filter((i) => i.thread.some((t) => t.kind === "examine" && t.side === "codex")).length;
+document.getElementById("steps").innerHTML = [
+  ["Ревью", `${agentsLine}`, `${pl(Number(meta.raw) || 0, "находка", "находки", "находок")} за ${esc(meta.duration_min)} мин`],
+  ["Склейка и проверка", `склейка объединила дубли в ${esc(meta.synthesized)}, верификатор (${esc(meta.verify_model || "пропущен")}) проверил каждую по коду`, rescued ? `${pl(rescued, "отсеянную склейкой и верификатором находку", "отсеянные склейкой и верификатором находки", "отсеянных склейкой и верификатором находок")} вернули в обсуждение` : "отсеянных находок нет"],
+  ["Раунд 1", `<span class="side-codex">Codex</span> проверил ${pl(examinedCodex, "пункт", "пункта", "пунктов")} Claude, <span class="side-claude">Claude</span> — ${pl(examinedClaude, "пункт", "пункта", "пунктов")} Codex`, `${pl(n("consensus"), "пункт нашли", "пункта нашли", "пунктов нашли")} обе стороны, их не обсуждали`],
+  ["Раунд 2", `${pl(round2, "возражение ушло", "возражения ушли", "возражений ушли")} автору находки: согласиться, настоять с новыми доказательствами или уточнить`, `${disputed.length ? pl(disputed.length, "пункт остался", "пункта остались", "пунктов остались") + (disputed.every((i) => i.moderated) ? " спором, их решил модератор" : " спором") : "споров не осталось"}; ещё ${pl(n("side"), "находка всплыла", "находки всплыли", "находок всплыло")} по ходу`],
+].map(([b, t, m]) => `<div class="step"><b>${b}</b><span>${t}</span><span class="muted">${m}</span></div>`).join("");
+
+// Переоценка приоритетов: было после склейки и проверки → стало после спора
+const sevName = (s) => (s === "none" ? "снято" : s);
+const fromName = (s) => (s === "none" ? "отложено" : s);
+const shifted = (d) => DATA.items.filter((i) => i.severity_shift && i.severity_shift.direction === d);
+const shiftDirs = ["raised", "lowered", "dropped"];
+const shiftTotal = shiftDirs.reduce((t, d) => t + shifted(d).length, 0);
+document.getElementById("shifts-lede").textContent = shiftTotal
+  ? "Серьёзность после склейки и проверки против итоговой после спора, и кто её изменил."
+  : "Спор не изменил серьёзность ни одного пункта.";
+document.getElementById("shift-counts").innerHTML = shiftDirs.map((d) => stat(shifted(d).length, SHIFT[d], SHIFT_SUB[d])).join("");
+document.getElementById("shift-list").innerHTML = shiftDirs.flatMap((d) => shifted(d).map((i) => {
+  const s = i.severity_shift;
+  return `<div class="shift-row"><span class="mono">${esc(fromName(s.from))} → ${esc(sevName(s.to))}</span><span><a href="#${esc(i.id)}" data-open="${esc(i.id)}">${md(i.title)}</a> <span class="who">· ${esc(i.id)} · ${esc(BY[s.by] || "")}</span></span></div>`;
+})).join("");
+
+// Фильтры
+const state = { sev: new Set(), out: new Set(), area: new Set(), q: "" };
+function chips(id, key, labels, values) {
+  const box = document.getElementById(id);
+  values.forEach((v) => {
+    const b = document.createElement("button");
+    b.className = "chip";
+    b.type = "button";
+    b.id = `chip-${key}-${v}`;
+    b.setAttribute("aria-pressed", "false");
+    b.textContent = `${labels[v]} · ${items.filter((i) => val(i, key) === v).length}`;
+    b.addEventListener("click", () => {
+      state[key].has(v) ? state[key].delete(v) : state[key].add(v);
+      b.setAttribute("aria-pressed", String(state[key].has(v)));
+      render();
+    });
+    box.appendChild(b);
+  });
+}
+const val = (i, key) => (key === "sev" ? (i.outcome === "question" ? "question" : i.final_severity) : key === "out" ? i.outcome : i[key]);
+const present = (key) => [...new Set(items.map((i) => val(i, key)))];
+chips("f-sev", "sev", SEV, ["critical", "major", "minor", "none"].filter((v) => present("sev").includes(v)));
+chips("f-out", "out", OUT_SHORT, OUT_ORDER.filter((v) => present("outcome").includes(v)));
+const AREA = Object.fromEntries(present("area").sort().map((a) => [a, a]));
+chips("f-area", "area", AREA, Object.keys(AREA));
+document.getElementById("q").addEventListener("input", (e) => { state.q = e.target.value.trim().toLowerCase(); render(); });
+
+function msg(t, item) {
+  if (t.kind === "finding") {
+    return `<div class="msg ${t.side.includes("+") ? "" : esc(t.side)}"><div class="head"><span class="n">${label(SIDE, t.side)}</span> <span class="st">нашли: ${t.sources.map(esc).join(", ")}</span></div></div>`;
+  }
+  if (t.kind === "pipeline") {
+    return `<div class="msg pipeline"><div class="head">${label(STATUS, t.status)}</div></div>`;
+  }
+  if (t.kind === "examine") {
+    return `<div class="msg ${esc(t.side)}"><div class="head"><span class="n">${label(SIDE, t.side)} проверяет</span> <span class="st">— ${label(STANCE, t.stance)}, ${t.severity === "none" ? "без серьёзности" : esc(t.severity)}</span></div><div class="arg">${md(t.argument)}</div><div class="ev">${md(t.evidence)}</div></div>`;
+  }
+  if (t.kind === "respond") {
+    return `<div class="msg ${esc(t.side)}"><div class="head"><span class="n">${label(SIDE, t.side)} отвечает</span> <span class="st">— ${label(POSITION, t.position)}, ${t.severity === "none" ? "снять" : esc(t.severity)}</span></div><div class="arg">${md(t.argument)}</div><div class="ev">${md(t.evidence)}</div></div>`;
+  }
+  if (t.kind === "answer") {
+    return `<div class="msg ${esc(t.side)}"><div class="head"><span class="n">${label(SIDE, t.side)} отвечает на вопрос</span></div><div class="arg">${md(t.answer)}</div><div class="ev">${md(t.evidence)}</div></div>`;
+  }
+  if (t.kind === "moderator") {
+    return `<div class="msg moderator"><div class="head"><span class="n">Модератор</span> <span class="st">— ${esc(t.verdict)}, ${t.severity === "none" ? "снять" : esc(t.severity)}</span></div><div class="arg">${md(t.note)}</div></div>`;
+  }
+  return "";
+}
+
+function card(i) {
+  const s = i.severity_shift;
+  const badge = s && shiftDirs.includes(s.direction)
+    ? `<span class="tag shift shift-${esc(s.direction)}" title="${esc(BY[s.by] || "")}">было ${esc(fromName(s.from))} → стало ${esc(sevName(s.to))}</span>` : "";
+  const outTag = i.outcome === "disputed" ? DISPUTE(i) : label(OUT_SHORT, i.outcome);
+  return `<details class="card sev-${esc(i.final_severity)}" id="${esc(i.id)}">
+    <summary>
+      <div class="row"><span class="pill">${i.outcome === "question" ? "вопрос" : label(SEV, i.final_severity)}</span><span class="tag ${esc(i.outcome)}">${outTag}</span>${badge}<span class="who">${esc(i.area)}</span></div>
+      <div class="title">${md(i.title)}</div>
+      <div class="loc">${esc(short(i.file))}:${esc(i.line)} · ${esc(i.id)}</div>
+    </summary>
+    <div class="body">
+      <div class="text">${md(i.body)}</div>
+      ${i.fix ? `<div class="fix"><b>Как чинить</b>${md(i.fix)}</div>` : ""}
+      <div class="thread">${i.thread.map((t) => msg(t, i)).join("")}</div>
+    </div>
+  </details>`;
+}
+
+function render() {
+  const q = state.q;
+  const list = items.filter((i) =>
+    (!state.sev.size || state.sev.has(val(i, "sev"))) &&
+    (!state.out.size || state.out.has(i.outcome)) &&
+    (!state.area.size || state.area.has(i.area)) &&
+    (!q || `${i.title} ${i.body} ${i.file} ${i.id}`.toLowerCase().includes(q))
+  );
+  document.getElementById("list").innerHTML = list.length ? list.map(card).join("") : `<div class="empty">Под фильтр ничего не попало. Снимите часть фильтров.</div>`;
+  document.getElementById("shown").textContent = `Показано ${list.length} из ${items.length}. Нажмите на пункт, чтобы раскрыть переписку.`;
+}
+render();
+
+document.addEventListener("click", (e) => {
+  const a = e.target.closest("[data-open]");
+  if (!a) return;
+  const el = document.getElementById(a.dataset.open);
+  if (el) el.open = true;
+});
+</script>

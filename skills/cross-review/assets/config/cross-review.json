@@ -1,0 +1,20 @@
+{
+  "tier": "standard",
+  "tiers": {
+    "standard": {
+      "claude": "opus:high",
+      "codex": "gpt-6.1-sol:high",
+      "moderators": { "claude": "fable:high", "codex": "gpt-6-astra:high" }
+    },
+    "expert": {
+      "claude": "fable:xhigh",
+      "codex": "gpt-6-astra:xhigh",
+      "moderators": { "claude": "opus:xhigh", "codex": "gpt-6.1-sol:xhigh" }
+    }
+  },
+  "roster": [
+    { "name": "bugs", "lenses": ["bugs", "impl"] },
+    { "name": "arch", "lenses": ["architecture", "quality"] }
+  ],
+  "stages": { "synthesis": true, "verify": true, "verify_groups": 6, "verify_group_by": "dir" }
+}

@@ -1,0 +1,20 @@
+{
+  "$schema": "https://www.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "cross-review",
+  "version": "0.1.0",
+  "displayName": "Cross-review",
+  "description": "Cross-vendor code review: Claude and Codex review the same change with the same lenses, then check each other's findings in a structured debate with a moderator and produce a reprioritized list and a report page.",
+  "author": {
+    "name": "Dmitriy Troyan",
+    "url": "https://github.com/troyan-dy"
+  },
+  "homepage": "https://github.com/troyan-dy/cross-review#readme",
+  "repository": "https://github.com/troyan-dy/cross-review",
+  "license": "MIT",
+  "keywords": [
+    "code-review",
+    "codex",
+    "cross-review",
+    "multi-model"
+  ]
+}

@@ -1,0 +1,174 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "cross-review synthesized findings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["findings", "open_questions", "pre_existing"],
+  "properties": {
+    "findings": {
+      "type": "array",
+      "description": "the merged findings that survive the drop rule, most severe first",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["merged_ids", "file", "line", "severity", "confidence", "title", "body"],
+        "properties": {
+          "merged_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ids of the input findings this one merges, copied exactly; every id must come from the input list, and one input finding belongs to at most one output finding across all three lists -- a dropped input belongs to none"
+          },
+          "file": {
+            "type": "string",
+            "description": "path of the file the finding is in, relative to the working directory"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "1-indexed anchor line, or 0 for a file-level finding with no single line"
+          },
+          "end_line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "last line of the range, or 0 when the finding is a single line"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor"],
+            "description": "the highest severity across the merged inputs"
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "the boosted confidence, 0-100"
+          },
+          "title": {
+            "type": "string",
+            "description": "one line naming the problem"
+          },
+          "body": {
+            "type": "string",
+            "description": "what is wrong and what it causes, with the concrete failure case"
+          },
+          "fix": {
+            "type": "string",
+            "description": "the smallest change that resolves it, empty when there is no obvious fix"
+          }
+        }
+      }
+    },
+    "open_questions": {
+      "type": "array",
+      "description": "things the reviewers could not settle without an answer from the author, split out before any merging",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["merged_ids", "file", "line", "severity", "confidence", "title", "body"],
+        "properties": {
+          "merged_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ids of the input findings this one merges, copied exactly; every id must come from the input list, and one input finding belongs to at most one output finding across all three lists -- a dropped input belongs to none"
+          },
+          "file": {
+            "type": "string",
+            "description": "path of the file the finding is in, relative to the working directory"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "1-indexed anchor line, or 0 for a file-level finding with no single line"
+          },
+          "end_line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "last line of the range, or 0 when the finding is a single line"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor"],
+            "description": "the highest severity across the merged inputs"
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "confidence as reported, never boosted for an open question"
+          },
+          "title": {
+            "type": "string",
+            "description": "one line naming the question"
+          },
+          "body": {
+            "type": "string",
+            "description": "what is unclear and what answer would settle it"
+          },
+          "fix": {
+            "type": "string",
+            "description": "empty for an open question"
+          }
+        }
+      }
+    },
+    "pre_existing": {
+      "type": "array",
+      "description": "problems the change under review did not introduce, split out before any merging",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["merged_ids", "file", "line", "severity", "confidence", "title", "body"],
+        "properties": {
+          "merged_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "ids of the input findings this one merges, copied exactly; every id must come from the input list, and one input finding belongs to at most one output finding across all three lists -- a dropped input belongs to none"
+          },
+          "file": {
+            "type": "string",
+            "description": "path of the file the finding is in, relative to the working directory"
+          },
+          "line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "1-indexed anchor line, or 0 for a file-level finding with no single line"
+          },
+          "end_line": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "last line of the range, or 0 when the finding is a single line"
+          },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "major", "minor"],
+            "description": "the highest severity across the merged inputs"
+          },
+          "confidence": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "confidence as reported, never boosted for a pre-existing issue"
+          },
+          "title": {
+            "type": "string",
+            "description": "one line naming the problem"
+          },
+          "body": {
+            "type": "string",
+            "description": "what is wrong and why the change under review did not introduce it"
+          },
+          "fix": {
+            "type": "string",
+            "description": "the smallest change that resolves it, empty when there is no obvious fix"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,276 @@
+{
+  "scope": {
+    "task": "demo",
+    "run": "01-initial",
+    "scope_path": "input/scope.md"
+  },
+  "sources": {
+    "expected": 4,
+    "reported": 4,
+    "degraded": [],
+    "agents": [
+      {
+        "name": "bugs-claude",
+        "lenses": [
+          "bugs",
+          "impl"
+        ],
+        "executor": "claude",
+        "requested_model": "opus",
+        "actual_model": "claude-opus-5-5",
+        "effort": "high",
+        "tokens": 0,
+        "raised": 3,
+        "degraded": false
+      },
+      {
+        "name": "bugs-codex",
+        "lenses": [
+          "bugs",
+          "impl"
+        ],
+        "executor": "codex",
+        "requested_model": "gpt-6.1-sol",
+        "actual_model": "gpt-6.1-sol",
+        "effort": "high",
+        "tokens": 0,
+        "raised": 3,
+        "degraded": false
+      },
+      {
+        "name": "arch-claude",
+        "lenses": [
+          "architecture",
+          "quality"
+        ],
+        "executor": "claude",
+        "requested_model": "opus",
+        "actual_model": "claude-opus-5-5",
+        "effort": "high",
+        "tokens": 0,
+        "raised": 4,
+        "degraded": false
+      },
+      {
+        "name": "arch-codex",
+        "lenses": [
+          "architecture",
+          "quality"
+        ],
+        "executor": "codex",
+        "requested_model": "gpt-6.1-sol",
+        "actual_model": "gpt-6.1-sol",
+        "effort": "high",
+        "tokens": 0,
+        "raised": 3,
+        "degraded": false
+      }
+    ]
+  },
+  "findings": [
+    {
+      "id": "bugs-claude-1",
+      "file": "app/store.py",
+      "line": 42,
+      "end_line": 44,
+      "severity": "major",
+      "confidence": 95,
+      "title": "Повтор записи теряет данные",
+      "body": "Синтетическое описание: Повтор записи теряет данные.",
+      "fix": "Синтетическое исправление для bugs-claude-1.",
+      "sources": [
+        "bugs-claude",
+        "bugs-codex"
+      ],
+      "lenses": [
+        "bugs",
+        "impl"
+      ],
+      "verdict": ""
+    },
+    {
+      "id": "bugs-claude-2",
+      "file": "app/api.py",
+      "line": 10,
+      "end_line": 12,
+      "severity": "major",
+      "confidence": 85,
+      "title": "Обработчик не проверяет пустой запрос",
+      "body": "Синтетическое описание: Обработчик не проверяет пустой запрос.",
+      "fix": "Синтетическое исправление для bugs-claude-2.",
+      "sources": [
+        "bugs-claude"
+      ],
+      "lenses": [
+        "bugs",
+        "impl"
+      ],
+      "verdict": ""
+    },
+    {
+      "id": "arch-claude-1",
+      "file": "app/models.py",
+      "line": 5,
+      "end_line": 7,
+      "severity": "major",
+      "confidence": 85,
+      "title": "Модель хранит и данные, и транспорт",
+      "body": "Синтетическое описание: Модель хранит и данные, и транспорт.",
+      "fix": "Синтетическое исправление для arch-claude-1.",
+      "sources": [
+        "arch-claude"
+      ],
+      "lenses": [
+        "architecture",
+        "quality"
+      ],
+      "verdict": ""
+    },
+    {
+      "id": "arch-claude-4",
+      "file": "app/util.py",
+      "line": 8,
+      "end_line": 10,
+      "severity": "minor",
+      "confidence": 95,
+      "title": "Дублируется форматирование дат",
+      "body": "Синтетическое описание: Дублируется форматирование дат.",
+      "fix": "Синтетическое исправление для arch-claude-4.",
+      "sources": [
+        "arch-claude",
+        "arch-codex"
+      ],
+      "lenses": [
+        "architecture",
+        "quality"
+      ],
+      "verdict": ""
+    },
+    {
+      "id": "bugs-codex-2",
+      "file": "app/worker.py",
+      "line": 77,
+      "end_line": 79,
+      "severity": "critical",
+      "confidence": 90,
+      "title": "Воркер подтверждает сообщение до обработки",
+      "body": "Синтетическое описание: Воркер подтверждает сообщение до обработки.",
+      "fix": "Синтетическое исправление для bugs-codex-2.",
+      "sources": [
+        "bugs-codex"
+      ],
+      "lenses": [
+        "bugs",
+        "impl"
+      ],
+      "verdict": ""
+    },
+    {
+      "id": "bugs-codex-3",
+      "file": "app/api.py",
+      "line": 55,
+      "end_line": 57,
+      "severity": "major",
+      "confidence": 80,
+      "title": "Таймаут не передаётся в клиент",
+      "body": "Синтетическое описание: Таймаут не передаётся в клиент.",
+      "fix": "Синтетическое исправление для bugs-codex-3.",
+      "sources": [
+        "bugs-codex"
+      ],
+      "lenses": [
+        "bugs",
+        "impl"
+      ],
+      "verdict": ""
+    },
+    {
+      "id": "arch-codex-1",
+      "file": "app/config.py",
+      "line": 12,
+      "end_line": 14,
+      "severity": "minor",
+      "confidence": 85,
+      "title": "Имя ключа конфига расходится с документацией",
+      "body": "Синтетическое описание: Имя ключа конфига расходится с документацией.",
+      "fix": "Синтетическое исправление для arch-codex-1.",
+      "sources": [
+        "arch-codex"
+      ],
+      "lenses": [
+        "architecture",
+        "quality"
+      ],
+      "verdict": ""
+    }
+  ],
+  "open_questions": [
+    {
+      "id": "arch-claude-3",
+      "file": "app/cache.py",
+      "line": 20,
+      "end_line": 22,
+      "severity": "minor",
+      "confidence": 50,
+      "title": "Намеренно ли кэш не сбрасывается при смене конфига?",
+      "body": "Синтетическое описание: Намеренно ли кэш не сбрасывается при смене конфига?.",
+      "fix": "Синтетическое исправление для arch-claude-3.",
+      "sources": [
+        "arch-claude"
+      ],
+      "lenses": [
+        "architecture",
+        "quality"
+      ],
+      "verdict": ""
+    }
+  ],
+  "pre_existing": [
+    {
+      "id": "arch-claude-2",
+      "file": "app/legacy.py",
+      "line": 30,
+      "end_line": 32,
+      "severity": "major",
+      "confidence": 80,
+      "title": "Старый парсер падает на пустой строке",
+      "body": "Синтетическое описание: Старый парсер падает на пустой строке.",
+      "fix": "Синтетическое исправление для arch-claude-2.",
+      "sources": [
+        "arch-claude"
+      ],
+      "lenses": [
+        "architecture",
+        "quality"
+      ],
+      "verdict": ""
+    }
+  ],
+  "immaterial": [],
+  "stats": {
+    "started_at": "2026-10-20T10:00:00+03:00",
+    "finished_at": "2026-10-20T10:06:00+03:00",
+    "duration_ms": 360000,
+    "tokens": 0,
+    "stages": [
+      {
+        "name": "find",
+        "duration_ms": 240000
+      },
+      {
+        "name": "synthesis",
+        "duration_ms": 30000,
+        "executor": "claude",
+        "model": "opus",
+        "effort": "high"
+      },
+      {
+        "name": "verify",
+        "duration_ms": 90000,
+        "executor": "claude",
+        "model": "opus",
+        "effort": "high"
+      }
+    ]
+  }
+}
