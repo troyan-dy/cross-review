@@ -208,7 +208,7 @@ class ResumeTest(CodexRunCase):
 
 
 class ScriptTest(unittest.TestCase):
-    """The bash script itself: syntax and Russian comments, as the marketplace conventions ask."""
+    """The bash script itself: syntax and Russian comments, as DEVELOPMENT.md asks."""
 
     def test_синтаксис_bash(self) -> None:
         res = subprocess.run(["bash", "-n", str(SCRIPT)], capture_output=True, text=True)

@@ -12,13 +12,13 @@ ref the clone does not have is a question to the user, not a download.
 | --- | --- | --- |
 | a branch | the branch against its base | `git diff <base>...<branch>` |
 | a range, `a..b` | the commits of the range | `git diff a..b`, `git log a..b` |
-| an MR (link or `!123`) | its source branch against the target | the `gitlab` MCP for branch and target, then `git diff <target>...<source>` |
+| a PR or an MR (link, `#123`, `!123`) | its source branch against the target | branch and target by `gh pr view <n> --json headRefName,baseRefName` (GitHub) or `glab mr view <n>` (GitLab), else the forge's MCP or the user; then `git diff <target>...<source>` |
 | uncommitted work, «мои правки» | the working tree against `HEAD` | `git diff HEAD`, plus `git status --short` for new files |
 | a package or a directory | the files themselves, no diff | `git ls-files <path>` |
 | `task/run`, or a finished run | the run as it is | none: go to step 5 |
 
-- **The base of a branch:** the MR's target, else `master` or `main`, whichever exists locally.
-- **An MR branch missing locally:** ask the user to fetch it. Never fetch it yourself.
+- **The base of a branch:** the PR's target, else `master` or `main`, whichever exists locally.
+- **A PR branch missing locally:** ask the user to fetch it. Never fetch it yourself.
 - **Uncommitted work:** write the snapshot time into `scope.md`.
 - **The last sha of a committed subject** is the `--ref` of `debate_prompts.py`.
 
@@ -29,14 +29,14 @@ Put a pipe at the end (`git log … | cat`).
 ## Names
 
 - **Task** — one per subject, kebab-case: the ticket key (`proj-123`), the branch
-  (`fix-login-retry`), `mr-123`, or `wip-<date>`. Later runs on the same subject reuse the task.
+  (`fix-login-retry`), `pr-123`, or `wip-<date>`. Later runs on the same subject reuse the task.
 - **Run** — `review_run.py new` names it: `01-initial` for the first run of a task, then
   `NN-after-fix`. `--run` overrides it only when the user names a run.
 - **The debate** lives in `<run_dir>/debate/`, one per run.
 
 ## task.md
 
-`new` writes it commented out. Fill it when the task is new: `description`, `url` (the MR link) and
+`new` writes it commented out. Fill it when the task is new: `description`, `url` (the PR link) and
 `branch`, `base`. A later session finds the task by `url` and `branch`, so set them exactly. Leave an
 existing `task.md` alone.
 

@@ -1,7 +1,7 @@
 ---
 name: cross-review
-description: Use when the user wants two model vendors to review a change and then check each other's findings — «перекрёстное ревью», «пусть Claude и Codex проверят друг друга», «устрой спор / дебаты моделей», «cross-review», «debate review», «повтори обсуждение после правок» — over a branch, range, MR, package, uncommitted work or an existing review run. Claude and Codex review with the same lenses, then cross-examine, answer objections and leave the disputes to a moderator. Not for a single-model review.
-argument-hint: "<что ревьюить — ветка | диапазон | MR | пакет | task/run> [standard | expert | <claude-модель>+<codex-модель>] [с независимыми модераторами]"
+description: Use when the user wants two model vendors to review a change and then check each other's findings — «перекрёстное ревью», «пусть Claude и Codex проверят друг друга», «устрой спор / дебаты моделей», «cross-review», «debate review», «повтори обсуждение после правок» — over a branch, range, PR/MR, package, uncommitted work or an existing review run. Claude and Codex review with the same lenses, then cross-examine, answer objections and leave the disputes to a moderator. Not for a single-model review.
+argument-hint: "<что ревьюить — ветка | диапазон | PR/MR | пакет | task/run> [standard | expert | <claude-модель>+<codex-модель>] [с независимыми модераторами]"
 ---
 
 # Cross-review
