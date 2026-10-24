@@ -4,37 +4,89 @@ import json
 import shlex
 import shutil
 import tempfile
+import types
 import unittest
 from pathlib import Path
 
-from support import FIXTURES, SCRIPTS, composed_run, copy_fixture, git, git_init, last_json_line, read_json, run
+from support import SCRIPTS, composed_run, git, git_init, last_json_line, pick, read_json, run
 
-import debate_prompts
+from crossreview.debate_context import tree_state
+from crossreview.debate_panel import panel_sentence
 
 SUBJECT = "MR !42 `feature/DEMO-1` (диапазон a1b2c3..d4e5f6)"
-PROMPT_FILES = [
-    "prompt-r1-claude.md", "prompt-r1-codex.md", "prompt-r2-claude.md", "prompt-r2-codex.md",
-    "prompt-r2-codex.fresh.md", "prompt-moderator.md", "prompt-moderator-claude.md", "prompt-moderator-codex.md",
-]
-SCHEMA_FILES = ["schema-examine.json", "schema-respond.json", "schema-moderate.json"]
+BASIC = SCRIPTS / "tests" / "fixtures" / "run-basic"
+CODEX_RUN = str(SCRIPTS / "codex_run.sh")
+PROMPT_FILES = (
+    "prompt-r1-claude.md",
+    "prompt-r1-codex.md",
+    "prompt-r2-claude.md",
+    "prompt-r2-codex.md",
+    "prompt-r2-codex.fresh.md",
+    "prompt-moderator.md",
+    "prompt-moderator-claude.md",
+    "prompt-moderator-codex.md",
+)
+SCHEMA_FILES = ("schema-examine.json", "schema-respond.json", "schema-moderate.json")
+# round 2 continues the round-1 session and names neither the subject nor the repository
+CONTINUED = ("prompt-r2-claude.md", "prompt-r2-codex.md")
+FIRST_ROUND = ("prompt-r1-claude.md", "prompt-r1-codex.md")
 PANEL = "Four reviewers — two Claude (claude-opus-5-5) and two Codex (gpt-6.1-sol) —"
 CODEX_OUTPUT = "Return JSON matching the output schema."
+SEPARATOR = "\n\n---\n\n"
+SOL = "gpt-6.1-sol"
+STEPS = (
+    ("r1", "claude"),
+    ("r1", "codex"),
+    ("r2", "claude"),
+    ("r2", "codex"),
+    ("moderate", "session"),
+    ("moderate", "claude"),
+    ("moderate", "codex"),
+)
+RUN_PROMPTS = ("prompts/review.md", "prompts/examine.md", "prompts/respond.md", "prompts/moderate.md")
+ALL_PLUGIN = types.MappingProxyType({"examine": "plugin", "respond": "plugin", "moderate": "plugin"})
+OWN_EXAMINE = "".join((
+    "---\ndescription: своя редакция\n---\nСвой бриф для стороны {{SIDE}} против {{OTHER}}.\n",
+    "Читай `{{INPUT}}`.\n\n{{OUTPUT}}\n",
+))
+FRESH_TAIL = "".join((
+    "Round 1 is over: your verdicts on these findings are in `{debate}/codex-r1.json` ",
+    "(no such file means you had nothing to examine). Do not examine them again; answer round 2 below.",
+))
+
+
+def required(path: Path) -> list[str]:
+    return read_json(path)["required"]
+
+
+def codex_command(workdir: Path, files: list[str], *tail: str) -> str:
+    """The codex_run.sh command line of a Codex step: workdir, the step's files, model, effort and the rest."""
+    argv = ["bash", CODEX_RUN, str(workdir), *files, *tail]
+    return shlex.join(argv)
+
+
+def by_step(launches: list[dict]) -> dict[tuple, dict]:
+    return {pick(launch, "step", "vendor"): launch for launch in launches}
+
+
+def panel_agents(count: int, side: str, model: str) -> list[dict]:
+    return [{"executor": side, "requested_model": model} for _ in range(count)]
 
 
 class PromptsCase(unittest.TestCase):
     """A cross-review run of the demo task holding the verified round of run-basic, with the debate built."""
 
     def setUp(self) -> None:
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name).resolve()
+        workspace = tempfile.TemporaryDirectory()
+        self.addCleanup(workspace.cleanup)
+        self.root = Path(workspace.name).resolve()
         self.run_dir = composed_run(self.root)
         self.repo = self.run_dir.parents[3]
         self.debate = self.run_dir / "debate"
-        basic = FIXTURES / "run-basic"
+        self.manifest_path = self.run_dir / "manifest.json"
         for name in ("findings.json", "events.jsonl"):
-            shutil.copy(basic / name, self.run_dir / name)
-        shutil.copytree(basic / "stages", self.run_dir / "stages")
+            shutil.copy(BASIC / name, self.run_dir / name)
+        shutil.copytree(BASIC / "stages", self.run_dir / "stages")
         res = run("debate_build", self.run_dir)
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
 
@@ -51,10 +103,25 @@ class PromptsCase(unittest.TestCase):
     def text(self, name: str) -> str:
         return (self.debate / name).read_text()
 
+    def own_path(self, name: str) -> Path:
+        return self.repo / ".cross-review" / "prompts" / f"{name}.md"
+
     def own(self, name: str, text: str) -> None:
-        path = self.repo / ".cross-review" / "prompts" / f"{name}.md"
+        path = self.own_path(name)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(text)
+
+    def manifest(self) -> dict:
+        return read_json(self.manifest_path)
+
+    def write_manifest(self, manifest: dict) -> None:
+        self.manifest_path.write_text(json.dumps(manifest))
+
+    def assert_texts(self, cases: tuple) -> None:
+        """Every (prompt file, expected text) of cases: the prompt holds the text."""
+        for name, expected in cases:
+            with self.subTest(file=name, expected=expected):
+                self.assertIn(expected, self.text(name))
 
 
 class FilesTest(PromptsCase):
@@ -63,13 +130,14 @@ class FilesTest(PromptsCase):
     def test_генерируются_все_файлы(self) -> None:
         out = self.prompts()
         self.assertEqual(out["debate_dir"], str(self.debate))
-        self.assertEqual(sorted(out["wrote"]), sorted(PROMPT_FILES + SCHEMA_FILES))
-        for name in PROMPT_FILES + SCHEMA_FILES:
+        written = PROMPT_FILES + SCHEMA_FILES
+        self.assertEqual(sorted(out["wrote"]), sorted(written))
+        for name in written:
             with self.subTest(file=name):
                 self.assertTrue((self.debate / name).is_file())
-        self.assertEqual(read_json(self.debate / "schema-examine.json")["required"], ["verdicts", "open_question_answers"])
-        self.assertEqual(read_json(self.debate / "schema-respond.json")["required"], ["responses", "side_findings"])
-        self.assertEqual(read_json(self.debate / "schema-moderate.json")["required"], ["decisions", "extra"])
+        self.assertEqual(required(self.debate / "schema-examine.json"), ["verdicts", "open_question_answers"])
+        self.assertEqual(required(self.debate / "schema-respond.json"), ["responses", "side_findings"])
+        self.assertEqual(required(self.debate / "schema-moderate.json"), ["decisions", "extra"])
 
     def test_плейсхолдеров_не_остаётся(self) -> None:
         self.prompts()
@@ -83,8 +151,9 @@ class FilesTest(PromptsCase):
         res = run("debate_prompts", self.run_dir, other, "--subject", SUBJECT)
         self.assertEqual(res.returncode, 0, res.stderr)
         self.assertEqual(last_json_line(res.stdout)["debate_dir"], str(other))
-        self.assertTrue((other / "prompt-r1-claude.md").is_file())
-        self.assertIn(f"`{other}/for-claude.json`", (other / "prompt-r1-claude.md").read_text())
+        prompt = other / "prompt-r1-claude.md"
+        self.assertTrue(prompt.is_file())
+        self.assertIn(f"`{other}/for-claude.json`", prompt.read_text())
 
     def test_повторный_запуск_перезаписывает(self) -> None:
         self.prompts()
@@ -97,24 +166,21 @@ class SubstitutionTest(PromptsCase):
 
     def test_предмет_пути_и_панель_подставлены(self) -> None:
         self.prompts()
-        d = self.debate
-        # round 2 continues the round-1 session and names neither
-        for name in (n for n in PROMPT_FILES if n not in ("prompt-r2-claude.md", "prompt-r2-codex.md")):
+        named = [name for name in PROMPT_FILES if name not in CONTINUED]
+        for name in named:
             with self.subTest(file=name):
                 self.assertIn(SUBJECT, self.text(name))
                 self.assertIn(f"`{self.repo}`", self.text(name))
-        cases = [
-            ("prompt-r1-claude.md", f"`{d}/for-claude.json`"),
-            ("prompt-r1-codex.md", f"`{d}/for-codex.json`"),
-            ("prompt-r2-claude.md", f"`{d}/for-claude-r2.json`"),
-            ("prompt-r2-codex.md", f"`{d}/for-codex-r2.json`"),
-            ("prompt-moderator.md", f"`{d}/disputes.json`"),
-            ("prompt-moderator-codex.md", f"`{d}/disputes.json`"),
-        ]
-        for name, expected in cases:
-            with self.subTest(file=name, expected=expected):
-                self.assertIn(expected, self.text(name))
-        for name in ("prompt-r1-claude.md", "prompt-r1-codex.md"):
+        debate = self.debate
+        self.assert_texts((
+            ("prompt-r1-claude.md", f"`{debate}/for-claude.json`"),
+            ("prompt-r1-codex.md", f"`{debate}/for-codex.json`"),
+            ("prompt-r2-claude.md", f"`{debate}/for-claude-r2.json`"),
+            ("prompt-r2-codex.md", f"`{debate}/for-codex-r2.json`"),
+            ("prompt-moderator.md", f"`{debate}/disputes.json`"),
+            ("prompt-moderator-codex.md", f"`{debate}/disputes.json`"),
+        ))
+        for name in FIRST_ROUND:
             with self.subTest(panel=name):
                 self.assertIn(f"{PANEL} reviewed it independently", self.text(name))
                 self.assertIn("`rejected_by_verify` — the verifier rejected it", self.text(name))
@@ -124,35 +190,36 @@ class SubstitutionTest(PromptsCase):
         self.assertIn("You are the **Claude side**", self.text("prompt-r1-claude.md"))
         self.assertIn("you examine what only the Codex reviewers raised", self.text("prompt-r1-claude.md"))
         self.assertIn("You are the **Codex side**", self.text("prompt-r1-codex.md"))
-        self.assertIn("The Claude side has examined the findings the Codex reviewers raised", self.text("prompt-r2-codex.md"))
+        examined = "The Claude side has examined the findings the Codex reviewers raised"
+        self.assertIn(examined, self.text("prompt-r2-codex.md"))
 
     def test_контекст_прогона_и_дополнительный(self) -> None:
-        (self.run_dir / "input" / "goal.md").write_text("Цель изменения.\n")
+        inputs = self.run_dir / "input"
+        (inputs / "goal.md").write_text("Цель изменения.\n")
         extra = self.root / "design.md"
         out = self.prompts("--context", f"{extra}=дизайн решения")
-        scope = self.run_dir / "input" / "scope.md"
-        self.assertEqual(out["context"], [str(scope), str(self.run_dir / "input" / "goal.md"), str(extra)])
-        for name in ("prompt-r1-claude.md", "prompt-r1-codex.md", "prompt-moderator.md"):
-            with self.subTest(file=name):
-                self.assertIn(f"- `{scope}` — what was reviewed", self.text(name))
-                self.assertIn(f"- `{extra}` — дизайн решения", self.text(name))
+        scope = inputs / "scope.md"
+        expected = [str(path) for path in (scope, inputs / "goal.md", extra)]
+        self.assertEqual(out["context"], expected)
+        self.assert_texts(
+            (name, line)
+            for name in ("prompt-r1-claude.md", "prompt-r1-codex.md", "prompt-moderator.md")
+            for line in (f"- `{scope}` — what was reviewed", f"- `{extra}` — дизайн решения")
+        )
 
     def test_вывод_сторон(self) -> None:
         self.prompts()
-        d = self.debate
-        cases = [
-            ("prompt-r1-claude.md", f"`{d}/claude-r1.json` with the Write tool"),
-            ("prompt-r1-claude.md", f"matching `{d}/schema-examine.json`"),
-            ("prompt-r2-claude.md", f"`{d}/claude-r2.json` with the Write tool"),
-            ("prompt-r2-claude.md", f"matching `{d}/schema-respond.json`"),
-            ("prompt-moderator.md", f"`{d}/moderator.json` as a JSON array"),
-            ("prompt-moderator.md", f"`{d}/extra.json` as a JSON array"),
-            ("prompt-moderator-claude.md", f"`{d}/moderator-claude.json` as a JSON array"),
-            ("prompt-moderator-claude.md", f"`{d}/extra-claude.json` as a JSON array"),
-        ]
-        for name, expected in cases:
-            with self.subTest(file=name, expected=expected):
-                self.assertIn(expected, self.text(name))
+        debate = self.debate
+        self.assert_texts((
+            ("prompt-r1-claude.md", f"`{debate}/claude-r1.json` with the Write tool"),
+            ("prompt-r1-claude.md", f"matching `{debate}/schema-examine.json`"),
+            ("prompt-r2-claude.md", f"`{debate}/claude-r2.json` with the Write tool"),
+            ("prompt-r2-claude.md", f"matching `{debate}/schema-respond.json`"),
+            ("prompt-moderator.md", f"`{debate}/moderator.json` as a JSON array"),
+            ("prompt-moderator.md", f"`{debate}/extra.json` as a JSON array"),
+            ("prompt-moderator-claude.md", f"`{debate}/moderator-claude.json` as a JSON array"),
+            ("prompt-moderator-claude.md", f"`{debate}/extra-claude.json` as a JSON array"),
+        ))
         for name in ("prompt-r1-codex.md", "prompt-r2-codex.md", "prompt-moderator-codex.md"):
             with self.subTest(codex=name):
                 self.assertTrue(self.text(name).rstrip().endswith(CODEX_OUTPUT))
@@ -161,108 +228,127 @@ class SubstitutionTest(PromptsCase):
 
     def test_русский_язык_в_каждом_промте(self) -> None:
         self.prompts()
-        cases = [
+        self.assert_texts((
             ("prompt-r1-claude.md", "Write every `argument` and every open question's `answer` in Russian"),
             ("prompt-r2-codex.md", "and the `title`, `body` and `fix` of every side finding, in Russian"),
             ("prompt-moderator-codex.md", "Write every `verdict` and `note`"),
-        ]
-        for name, expected in cases:
-            with self.subTest(file=name):
-                self.assertIn(expected, self.text(name))
+        ))
 
     def test_свежий_промт_r2_codex(self) -> None:
         self.prompts()
         fresh = self.text("prompt-r2-codex.fresh.md")
-        r1, r2 = self.text("prompt-r1-codex.md"), self.text("prompt-r2-codex.md")
-        head, sep, tail = fresh.partition("\n\n---\n\n")
-        self.assertEqual(sep, "\n\n---\n\n")
-        self.assertEqual(tail, r2)
-        self.assertEqual(head, r1.rstrip("\n").removesuffix(CODEX_OUTPUT).rstrip("\n") + "\n\n"
-                         + f"Round 1 is over: your verdicts on these findings are in `{self.debate}/codex-r1.json` "
-                         "(no such file means you had nothing to examine). Do not examine them again; answer round 2 below.")
+        head, sep, tail = fresh.partition(SEPARATOR)
+        self.assertEqual(sep, SEPARATOR)
+        self.assertEqual(tail, self.text("prompt-r2-codex.md"))
+        self.assertEqual(head, self.fresh_head())
         self.assertEqual(fresh.count(CODEX_OUTPUT), 1)
+
+    def fresh_head(self) -> str:
+        """The round-1 Codex prompt without its output rule, then the note that round 1 is over."""
+        prompt = self.text("prompt-r1-codex.md").rstrip("\n")
+        first = prompt.removesuffix(CODEX_OUTPUT).rstrip("\n")
+        tail = FRESH_TAIL.format(debate=self.debate)
+        return f"{first}\n\n{tail}"
 
 
 class LaunchTest(PromptsCase):
     """The launch plan: every step's files, and for a cross-review run the models and codex_run.sh commands."""
 
     def entry(self, out: dict, step: str, vendor: str) -> dict:
-        return next(e for e in out["launch"] if (e["step"], e["vendor"]) == (step, vendor))
+        return by_step(out["launch"])[step, vendor]
 
     def command(self, prompt: str, schema: str, output: str, model: str, *tail: str) -> str:
-        d = self.debate
-        return shlex.join(["bash", str(SCRIPTS / "codex_run.sh"), str(self.repo), str(d / prompt), str(d / schema),
-                           str(d / output), model, "high", *tail])
+        files = self.debate_files(prompt, schema, output)
+        return codex_command(self.repo, files, model, "high", *tail)
+
+    def debate_files(self, *names: str) -> list[str]:
+        return [str(self.debate / name) for name in names]
 
     def test_порядок_шагов(self) -> None:
         out = self.prompts()
-        self.assertEqual([(e["step"], e["vendor"]) for e in out["launch"]], [
-            ("r1", "claude"), ("r1", "codex"), ("r2", "claude"), ("r2", "codex"),
-            ("moderate", "session"), ("moderate", "claude"), ("moderate", "codex"),
-        ])
+        steps = [(launch["step"], launch["vendor"]) for launch in out["launch"]]
+        self.assertEqual(tuple(steps), STEPS)
 
     def test_стороны_claude(self) -> None:
         out = self.prompts()
-        d = self.debate
-        self.assertEqual(self.entry(out, "r1", "claude"), {
-            "step": "r1", "vendor": "claude", "prompt": str(d / "prompt-r1-claude.md"),
-            "output": str(d / "claude-r1.json"), "alias": "opus", "effort": "high"})
+        self.assertEqual(self.entry(out, "r1", "claude"), self.claude_r1())
         self.assertEqual(self.entry(out, "r2", "claude")["continues"], "r1")
-        self.assertEqual(self.entry(out, "moderate", "session")["output"], [str(d / "moderator.json"), str(d / "extra.json")])
+        session = self.entry(out, "moderate", "session")
+        self.assertEqual(session["output"], self.debate_files("moderator.json", "extra.json"))
         moderator = self.entry(out, "moderate", "claude")
         self.assertEqual((moderator["alias"], moderator["effort"]), ("fable", "high"))
-        self.assertEqual(moderator["output"], [str(d / "moderator-claude.json"), str(d / "extra-claude.json")])
+        self.assertEqual(moderator["output"], self.debate_files("moderator-claude.json", "extra-claude.json"))
+
+    def claude_r1(self) -> dict:
+        prompt, output = self.debate_files("prompt-r1-claude.md", "claude-r1.json")
+        return {
+            "step": "r1",
+            "vendor": "claude",
+            "prompt": prompt,
+            "output": output,
+            "alias": "opus",
+            "effort": "high",
+        }
 
     def test_стороны_codex_через_codex_run(self) -> None:
         out = self.prompts()
-        d = self.debate
-        r1 = self.entry(out, "r1", "codex")
-        self.assertEqual((r1["model"], r1["effort"], r1["schema"]), ("gpt-6.1-sol", "high", str(d / "schema-examine.json")))
-        self.assertEqual(r1["command"], self.command("prompt-r1-codex.md", "schema-examine.json", "codex-r1.json", "gpt-6.1-sol"))
-        r2 = self.entry(out, "r2", "codex")
-        self.assertEqual((r2["resume"], r2["fresh"]), (str(d / "codex-r1.log"), str(d / "prompt-r2-codex.fresh.md")))
-        self.assertEqual(r2["command"], self.command("prompt-r2-codex.md", "schema-respond.json", "codex-r2.json",
-                                                     "gpt-6.1-sol", "--resume", str(d / "codex-r1.log")))
-        self.assertEqual(r2["fresh_command"], self.command("prompt-r2-codex.fresh.md", "schema-respond.json",
-                                                           "codex-r2.json", "gpt-6.1-sol"))
+        self.check_codex_r1(self.entry(out, "r1", "codex"))
+        self.check_codex_r2(self.entry(out, "r2", "codex"))
+        moderate = ("prompt-moderator-codex.md", "schema-moderate.json", "moderator-codex.json", "gpt-6-astra")
         moderator = self.entry(out, "moderate", "codex")
-        self.assertEqual(moderator["command"], self.command("prompt-moderator-codex.md", "schema-moderate.json",
-                                                            "moderator-codex.json", "gpt-6-astra"))
+        self.assertEqual(moderator["command"], self.command(*moderate))
+
+    def check_codex_r1(self, codex_r1: dict) -> None:
+        schema = str(self.debate / "schema-examine.json")
+        self.assertEqual(pick(codex_r1, "model", "effort", "schema"), (SOL, "high", schema))
+        examine = self.command("prompt-r1-codex.md", "schema-examine.json", "codex-r1.json", SOL)
+        self.assertEqual(codex_r1["command"], examine)
+
+    def check_codex_r2(self, codex_r2: dict) -> None:
+        log, fresh = self.debate_files("codex-r1.log", "prompt-r2-codex.fresh.md")
+        self.assertEqual(pick(codex_r2, "resume", "fresh"), (log, fresh))
+        respond = ("schema-respond.json", "codex-r2.json", SOL)
+        resumed = self.command("prompt-r2-codex.md", *respond, "--resume", log)
+        self.assertEqual(codex_r2["command"], resumed)
+        self.assertEqual(codex_r2["fresh_command"], self.command("prompt-r2-codex.fresh.md", *respond))
 
     def test_модели_из_манифеста_главнее_findings(self) -> None:
-        manifest = read_json(self.run_dir / "manifest.json")
-        manifest["models"] = {"claude": {"model": "sonnet", "effort": "medium"}, "codex": {"model": "gpt-6-sol", "effort": "low"}}
-        (self.run_dir / "manifest.json").write_text(json.dumps(manifest))
+        manifest = self.manifest()
+        manifest["models"] = {
+            "claude": {"model": "sonnet", "effort": "medium"},
+            "codex": {"model": "gpt-6-sol", "effort": "low"},
+        }
+        self.write_manifest(manifest)
         out = self.prompts()
-        r1 = self.entry(out, "r1", "claude")
-        self.assertEqual((r1["alias"], r1["effort"]), ("sonnet", "medium"))
-        d = self.debate
-        self.assertEqual(self.entry(out, "r1", "codex")["command"], shlex.join([
-            "bash", str(SCRIPTS / "codex_run.sh"), str(self.repo), str(d / "prompt-r1-codex.md"),
-            str(d / "schema-examine.json"), str(d / "codex-r1.json"), "gpt-6-sol", "low"]))
+        claude_r1 = self.entry(out, "r1", "claude")
+        self.assertEqual((claude_r1["alias"], claude_r1["effort"]), ("sonnet", "medium"))
+        files = self.debate_files("prompt-r1-codex.md", "schema-examine.json", "codex-r1.json")
+        command = self.entry(out, "r1", "codex")["command"]
+        self.assertEqual(command, codex_command(self.repo, files, "gpt-6-sol", "low"))
 
     def test_без_моделей_в_манифесте_модели_из_findings(self) -> None:
-        manifest = read_json(self.run_dir / "manifest.json")
-        del manifest["models"], manifest["moderators"]
-        (self.run_dir / "manifest.json").write_text(json.dumps(manifest))
+        manifest = self.manifest()
+        manifest.pop("models")
+        manifest.pop("moderators")
+        self.write_manifest(manifest)
         out = self.prompts()
-        r1 = self.entry(out, "r1", "claude")
-        self.assertEqual((r1["alias"], r1["effort"]), ("opus", "high"))
-        self.assertEqual(self.entry(out, "r1", "codex")["command"],
-                         self.command("prompt-r1-codex.md", "schema-examine.json", "codex-r1.json", "gpt-6.1-sol"))
+        claude_r1 = self.entry(out, "r1", "claude")
+        self.assertEqual((claude_r1["alias"], claude_r1["effort"]), ("opus", "high"))
+        examine = self.command("prompt-r1-codex.md", "schema-examine.json", "codex-r1.json", SOL)
+        self.assertEqual(self.entry(out, "r1", "codex")["command"], examine)
         moderator = self.entry(out, "moderate", "claude")
         self.assertEqual((moderator["alias"], moderator["effort"]), ("fable", "high"))
         self.assertEqual(self.entry(out, "moderate", "codex")["model"], "gpt-6-astra")
         self.assertIn("resume", self.entry(out, "r2", "codex"))
 
-    def test_неизвестная_модель_в_findings_выход_1(self) -> None:
-        manifest = read_json(self.run_dir / "manifest.json")
-        del manifest["models"]
-        (self.run_dir / "manifest.json").write_text(json.dumps(manifest))
+    def test_неизвестная_модель_в_findings_выход1(self) -> None:
+        manifest = self.manifest()
+        manifest.pop("models")
+        self.write_manifest(manifest)
         findings = read_json(self.run_dir / "findings.json")
         for agent in findings["sources"]["agents"]:
             if agent["executor"] == "claude":
-                agent["requested_model"] = agent["actual_model"] = "claude-mystery-1"
+                agent.update(requested_model="claude-mystery-1", actual_model="claude-mystery-1")
         (self.run_dir / "findings.json").write_text(json.dumps(findings))
         self.assertIn("claude-mystery-1", self.failing()["error"])
 
@@ -270,19 +356,21 @@ class LaunchTest(PromptsCase):
 class LayerTest(PromptsCase):
     """The prompts resolve through .cross-review/ of the reviewed repository, and the run's manifest says so."""
 
+    def manifest_layers(self) -> dict[str, str]:
+        return {source["path"]: source["layer"] for source in self.manifest()["prompts"]}
+
     def test_промты_спора_в_манифесте(self) -> None:
         out = self.prompts()
-        self.assertEqual({name: v["layer"] for name, v in out["prompts"].items()},
-                         {"examine": "plugin", "respond": "plugin", "moderate": "plugin"})
+        resolved = out["prompts"]
+        layers = {name: resolved[name]["layer"] for name in resolved}
+        self.assertEqual(layers, ALL_PLUGIN)
         self.prompts()
-        sources = [p for p in read_json(self.run_dir / "manifest.json")["prompts"] if p["path"].startswith("prompts/")]
-        self.assertEqual([p["path"] for p in sources],
-                         ["prompts/review.md", "prompts/examine.md", "prompts/respond.md", "prompts/moderate.md"])
-        self.assertEqual({p["layer"] for p in sources}, {"plugin"})
+        prompts = [path for path in self.manifest_layers() if path.startswith("prompts/")]
+        self.assertEqual(tuple(prompts), RUN_PROMPTS)
+        self.assertEqual({self.manifest_layers()[path] for path in prompts}, {"plugin"})
 
     def test_override_examine_из_репозитория(self) -> None:
-        self.own("examine", "---\ndescription: своя редакция\n---\nСвой бриф для стороны {{SIDE}} против {{OTHER}}.\n"
-                            "Читай `{{INPUT}}`.\n\n{{OUTPUT}}\n")
+        self.own("examine", OWN_EXAMINE)
         out = self.prompts()
         self.assertEqual(out["prompts"]["examine"]["layer"], "repo")
         self.assertEqual(out["prompts"]["respond"]["layer"], "plugin")
@@ -292,23 +380,23 @@ class LayerTest(PromptsCase):
         self.assertNotIn("description:", text)
         self.assertTrue(self.text("prompt-r2-codex.fresh.md").startswith("Свой бриф для стороны Codex"))
         self.assertTrue(self.text("prompt-r2-claude.md").startswith("Round 2."))
-        manifest = {p["path"]: p["layer"] for p in read_json(self.run_dir / "manifest.json")["prompts"]}
-        self.assertEqual((manifest["prompts/examine.md"], manifest["prompts/respond.md"]), ("repo", "plugin"))
+        layers = self.manifest_layers()
+        self.assertEqual((layers["prompts/examine.md"], layers["prompts/respond.md"]), ("repo", "plugin"))
 
     def test_неизвестный_плейсхолдер_ошибка(self) -> None:
-        cases = [
+        cases = (
             ("examine", "Сторона {{SIDE}}, {{NOPE}}.\n", "{{NOPE}}"),
             ("respond", "Ответ {{SIDE}} на {{INPUT}} с {{SCOPE}}.\n", "{{SCOPE}}"),
             # у модератора нет стороны
             ("moderate", "Модератор {{SIDE}}.\n", "{{SIDE}}"),
-        ]
+        )
         for name, text, placeholder in cases:
             with self.subTest(prompt=name):
                 self.own(name, text)
-                out = self.failing()
-                self.assertIn(f"prompts/{name}.md", out["error"])
-                self.assertIn(f"unknown placeholder {placeholder}", out["error"])
-                (self.repo / ".cross-review" / "prompts" / f"{name}.md").unlink()
+                error = self.failing()["error"]
+                self.assertIn(f"prompts/{name}.md", error)
+                self.assertIn(f"unknown placeholder {placeholder}", error)
+                self.own_path(name).unlink()
         self.assertEqual(self.prompts()["prompts"]["examine"]["layer"], "plugin")
 
     def test_опечатка_в_имени_промта_ошибка(self) -> None:
@@ -333,29 +421,32 @@ class RefTest(PromptsCase):
         git(self.repo, "checkout", "-q", old)
         out = self.prompts("--ref", new)
         self.assertIn(f"does **not** contain `{new}`", out["tree"])
-        for name in ("prompt-r1-claude.md", "prompt-r1-codex.md", "prompt-moderator.md", "prompt-r2-codex.fresh.md"):
+        for name in (*FIRST_ROUND, "prompt-moderator.md", "prompt-r2-codex.fresh.md"):
             with self.subTest(file=name):
                 self.assertIn(f"Read every file through `git show {new}:<path>`", self.text(name))
 
     def test_состояния_дерева(self) -> None:
         old = self.commit("a.txt")
         new = self.commit("b.txt")
-        cases = [
+        cases = (
             (None, "Cite lines as the working tree has them."),
             (new, f"It contains `{new}`, the commit under review"),
             (old, f"It contains `{old}`, the commit under review"),
             ("no-such-ref", "The ref `no-such-ref` does not resolve here"),
-        ]
+        )
         for ref, expected in cases:
             with self.subTest(ref=ref):
-                note = debate_prompts.tree_state(str(self.repo), ref)
-                self.assertTrue(note.startswith(f"The working tree is `master` at `{new}`."), note)
-                self.assertIn(expected, note)
+                self.check_note(ref, expected, new)
         (self.repo / "a.txt").write_text("changed\n")
-        self.assertIn(", with uncommitted changes.", debate_prompts.tree_state(str(self.repo), None))
+        self.assertIn(", with uncommitted changes.", tree_state(str(self.repo), None))
+
+    def check_note(self, ref: str | None, expected: str, head: str) -> None:
+        note = tree_state(str(self.repo), ref)
+        self.assertTrue(note.startswith(f"The working tree is `master` at `{head}`."), note)
+        self.assertIn(expected, note)
 
     def test_репозиторий_без_коммитов(self) -> None:
-        note = debate_prompts.tree_state(str(git_init(self.root / "empty")), None)
+        note = tree_state(str(git_init(self.root / "empty")), None)
         self.assertTrue(note.startswith("The working tree is `"), note)
         self.assertIn(", with no commit yet", note)
 
@@ -364,78 +455,86 @@ class ExternalRunTest(unittest.TestCase):
     """An external run outside .cross-review/runs/: the layers come from --workdir and the manifest is not touched."""
 
     def setUp(self) -> None:
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name).resolve()
-        self.round = copy_fixture("run-basic", self.root / "external" / "tasks" / "demo" / "01-initial")
+        workspace = tempfile.TemporaryDirectory()
+        self.addCleanup(workspace.cleanup)
+        self.root = Path(workspace.name).resolve()
+        task = self.root / "external" / "tasks" / "demo"
+        self.round = task / "01-initial"
+        shutil.copytree(BASIC, self.round)
+        self.debate = self.round / "debate"
         (self.round / "input").mkdir()
         (self.round / "input" / "scope.md").write_text("`git diff master`\n")
         self.workdir = git_init(self.root / "repo", commit=True)
         res = run("debate_build", self.round)
         self.assertEqual(res.returncode, 0, res.stderr)
 
-    def launch(self) -> dict:
-        res = run("debate_prompts", self.round, "--subject", SUBJECT, "--workdir", self.workdir)
+    def prompts(self, *args: object, cwd: Path | None = None) -> dict:
+        res = run("debate_prompts", self.round, "--subject", SUBJECT, *args, cwd=cwd)
         self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        out = last_json_line(res.stdout)
-        return {(e["step"], e["vendor"]): e for e in out["launch"]}
+        return last_json_line(res.stdout)
+
+    def launch(self) -> dict:
+        out = self.prompts("--workdir", self.workdir)
+        return by_step(out["launch"])
+
+    def text(self, name: str) -> str:
+        return (self.debate / name).read_text()
+
+    def own(self, name: str, text: str) -> None:
+        own = self.workdir / ".cross-review" / name
+        own.parent.mkdir(parents=True)
+        own.write_text(text)
 
     def test_внешний_прогон_на_моделях_ревью_без_манифеста(self) -> None:
         launch = self.launch()
-        debate = self.round / "debate"
-        self.assertIn(f"`{self.workdir}`", (debate / "prompt-r1-claude.md").read_text())
-        self.assertEqual((launch["r1", "claude"]["alias"], launch["r1", "claude"]["effort"]), ("opus", "high"))
-        self.assertEqual(launch["r1", "codex"]["command"], shlex.join([
-            "bash", str(SCRIPTS / "codex_run.sh"), str(self.workdir), str(debate / "prompt-r1-codex.md"),
-            str(debate / "schema-examine.json"), str(debate / "codex-r1.json"), "gpt-6.1-sol", "high"]))
+        self.assertIn(f"`{self.workdir}`", self.text("prompt-r1-claude.md"))
+        claude_r1 = launch["r1", "claude"]
+        self.assertEqual((claude_r1["alias"], claude_r1["effort"]), ("opus", "high"))
+        files = [str(self.debate / name) for name in ("prompt-r1-codex.md", "schema-examine.json", "codex-r1.json")]
+        command = codex_command(self.workdir, files, SOL, "high")
+        self.assertEqual(launch["r1", "codex"]["command"], command)
         self.assertEqual(launch["moderate", "claude"]["alias"], "fable")
         self.assertEqual(launch["moderate", "codex"]["model"], "gpt-6-astra")
         self.assertFalse((self.round / "manifest.json").exists())
 
     def test_модераторы_внешнего_прогона_из_конфига_workdir(self) -> None:
-        own = self.workdir / ".cross-review" / "cross-review.json"
-        own.parent.mkdir(parents=True)
-        own.write_text(json.dumps({"tier": "expert"}))
+        self.own("cross-review.json", json.dumps({"tier": "expert"}))
         launch = self.launch()
-        self.assertEqual((launch["moderate", "claude"]["alias"], launch["moderate", "claude"]["effort"]), ("opus", "xhigh"))
-        self.assertEqual(launch["moderate", "codex"]["model"], "gpt-6.1-sol")
+        moderator = launch["moderate", "claude"]
+        self.assertEqual((moderator["alias"], moderator["effort"]), ("opus", "xhigh"))
+        self.assertEqual(launch["moderate", "codex"]["model"], SOL)
         self.assertEqual(launch["r1", "claude"]["alias"], "opus")
 
     def test_слой_репозитория_из_workdir(self) -> None:
-        own = self.workdir / ".cross-review" / "prompts" / "respond.md"
-        own.parent.mkdir(parents=True)
-        own.write_text("Раунд 2 для {{SIDE}}: `{{INPUT}}`.\n\n{{OUTPUT}}\n")
-        res = run("debate_prompts", self.round, "--subject", SUBJECT, "--workdir", self.workdir)
-        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        self.assertEqual(last_json_line(res.stdout)["prompts"]["respond"]["layer"], "repo")
-        self.assertTrue((self.round / "debate" / "prompt-r2-claude.md").read_text().startswith("Раунд 2 для Claude:"))
+        self.own("prompts/respond.md", "Раунд 2 для {{SIDE}}: `{{INPUT}}`.\n\n{{OUTPUT}}\n")
+        out = self.prompts("--workdir", self.workdir)
+        self.assertEqual(out["prompts"]["respond"]["layer"], "repo")
+        self.assertTrue(self.text("prompt-r2-claude.md").startswith("Раунд 2 для Claude:"))
 
     def test_рабочий_каталог_по_умолчанию_текущий(self) -> None:
-        res = run("debate_prompts", self.round, "--subject", SUBJECT, cwd=self.workdir)
-        self.assertEqual(res.returncode, 0, res.stdout + res.stderr)
-        self.assertIn(f"(repository root: `{self.workdir}`)",
-                      (self.round / "debate" / "prompt-moderator.md").read_text())
+        self.prompts(cwd=self.workdir)
+        self.assertIn(f"(repository root: `{self.workdir}`)", self.text("prompt-moderator.md"))
 
 
 class ErrorsTest(unittest.TestCase):
     """What the script refuses: no findings.json, a malformed --context, a missing --subject."""
 
     def setUp(self) -> None:
-        tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(tmp.cleanup)
-        self.root = Path(tmp.name).resolve()
+        workspace = tempfile.TemporaryDirectory()
+        self.addCleanup(workspace.cleanup)
+        self.root = Path(workspace.name).resolve()
 
-    def test_без_findings_json_выход_1(self) -> None:
+    def test_без_findings_json_выход1(self) -> None:
         res = run("debate_prompts", self.root, "--subject", SUBJECT)
         self.assertEqual(res.returncode, 1)
         self.assertIn("findings.json", last_json_line(res.stdout)["error"])
         self.assertFalse((self.root / "debate").exists())
 
-    def test_неверные_аргументы_выход_2(self) -> None:
-        cases = [
+    def test_неверные_аргументы_выход2(self) -> None:
+        cases = (
             ("context без WHY", [self.root, "--subject", SUBJECT, "--context", "/tmp/x.md"]),
             ("без subject", [self.root]),
-        ]
+        )
         for label, args in cases:
             with self.subTest(case=label):
                 res = run("debate_prompts", *args)
@@ -448,21 +547,18 @@ class PanelTest(unittest.TestCase):
     """The panel sentence from the run's agents."""
 
     def test_фраза_панели(self) -> None:
-        def agents(n: int, side: str, model: str) -> list[dict]:
-            return [{"executor": side, "requested_model": model} for _ in range(n)]
-
-        cases = [
-            ("обе стороны", agents(1, "claude", "opus") + agents(1, "codex", "gpt-6.1-sol"),
+        actual = {"executor": "claude", "requested_model": "opus", "actual_model": "claude-opus-5-5"}
+        cases = (
+            ("обе стороны", panel_agents(1, "claude", "opus") + panel_agents(1, "codex", SOL),
              "Two reviewers — one Claude (opus) and one Codex (gpt-6.1-sol) —"),
-            ("фактическая модель главнее", [{"executor": "claude", "requested_model": "opus", "actual_model": "claude-opus-5-5"}],
-             "One reviewer — one Claude (claude-opus-5-5) —"),
-            ("больше восьми", agents(5, "claude", "opus") + agents(5, "codex", "gpt-6.1-sol"),
+            ("фактическая модель главнее", [actual], "One reviewer — one Claude (claude-opus-5-5) —"),
+            ("больше восьми", panel_agents(5, "claude", "opus") + panel_agents(5, "codex", SOL),
              "10 reviewers — five Claude (opus) and five Codex (gpt-6.1-sol) —"),
             ("без агентов", [], "The panel's reviewers"),
-        ]
+        )
         for label, given, expected in cases:
             with self.subTest(case=label):
-                self.assertEqual(debate_prompts.panel_sentence(given), expected)
+                self.assertEqual(panel_sentence(given), expected)
 
 
 if __name__ == "__main__":

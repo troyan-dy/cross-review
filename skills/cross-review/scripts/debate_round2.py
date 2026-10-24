@@ -11,59 +11,80 @@ not JSON or breaks schema-examine.json prints {"error": ...} and exits 1.
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from debate_prompts import EXAMINE_SCHEMA, load_answer  # noqa: E402
+from crossreview import cli  # noqa: E402
+from crossreview.debate_schemas import EXAMINE_SCHEMA, load_answer  # noqa: E402
+from crossreview.jsonio import emit, fail, write_json  # noqa: E402
+from crossreview.keys import ID, SEVERITY, VENDORS  # noqa: E402
+from crossreview.models import SIDES  # noqa: E402
 
 PAIRS = (("codex", "claude"), ("claude", "codex"))  # (examiner, author)
+VERDICTS = "verdicts"
 
 
-def objections(items: dict[str, dict], verdicts: list[dict]) -> list[dict]:
+def objections(cards: dict[str, dict], verdicts: list[dict]) -> list[dict]:
     """The verdicts the author has to answer, each paired with the finding it is about."""
-    out = []
-    for v in verdicts:
-        item = items.get(v["id"])
-        if item is None:
+    found = []
+    for verdict in verdicts:
+        card = cards.get(verdict[ID])
+        if card is None or set(card[VENDORS]) == set(SIDES):
             continue
-        if v["stance"] == "real" and v["severity"] == item["severity"]:
-            continue
-        if set(item["vendors"]) == {"claude", "codex"}:
-            continue
-        out.append({"finding": item, "objection": v})
-    return out
+        if verdict["stance"] != "real" or verdict[SEVERITY] != card[SEVERITY]:
+            found.append({"finding": card, "objection": verdict})
+    return found
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("debate_dir", help="the debate directory with items.json and the round-1 verdicts")
-    args = ap.parse_args(argv)
-    d = Path(args.debate_dir).resolve()
-    path = d / "items.json"
+    """Write for-<author>-r2.json for both sides and print the counts; a broken input is {"error": ...}, exit 1."""
+    root = cli.parser(__doc__)
+    root.add_argument("debate_dir", help="the debate directory with items.json and the round-1 verdicts")
+    debate_dir = Path(root.parse_args(argv).debate_dir).resolve()
+    path = debate_dir / "items.json"
     try:
-        items = {i["id"]: i for i in json.loads(path.read_text())}
-    except (OSError, ValueError, TypeError, KeyError) as e:
-        reason = e.strerror if isinstance(e, OSError) and e.strerror else str(e)
-        print(json.dumps({"error": f"{path}: {reason}; run debate_build.py first"}, ensure_ascii=False))
-        return 1
+        cards = _read_cards(path)
+    except ValueError as error:
+        return fail(f"{path}: {error}; run debate_build.py first")
+    try:
+        counts = _round2(debate_dir, cards)
+    except ValueError as error:
+        return fail(str(error))
+    emit(counts)
+    return 0
+
+
+def _read_cards(path: Path) -> dict[str, dict]:
+    """items.json by id; ValueError with the reason when it is missing, not JSON or not a list of cards."""
+    try:
+        listed = json.loads(path.read_text())
+    except OSError as error:
+        raise ValueError(error.strerror or str(error)) from None
+    except ValueError as error:
+        raise ValueError(str(error)) from None
+    try:
+        return {card[ID]: card for card in listed}
+    except (TypeError, KeyError) as error:
+        raise ValueError(str(error)) from None
+
+
+def _round2(debate_dir: Path, cards: dict[str, dict]) -> dict[str, object]:
     counts: dict[str, object] = {}
     for examiner, author in PAIRS:
-        src = d / f"{examiner}-r1.json"
-        try:
-            verdicts = load_answer(src, EXAMINE_SCHEMA, {"verdicts": []})["verdicts"]
-        except ValueError as e:
-            print(json.dumps({"error": str(e)}, ensure_ascii=False))
-            return 1
-        found = objections(items, verdicts)
-        (d / f"for-{author}-r2.json").write_text(json.dumps(found, ensure_ascii=False, indent=2) + "\n")
-        counts[f"for_{author}_r2"] = len(found)
-        counts[f"{examiner}_r1_present"] = src.exists()
-    print(json.dumps(counts))
-    return 0
+        counts.update(_pair(debate_dir, cards, examiner, author))
+    return counts
+
+
+def _pair(debate_dir: Path, cards: dict, examiner: str, author: str) -> dict:
+    """The examiner's objections to the author's findings, written for the author's round 2."""
+    source = debate_dir / f"{examiner}-r1.json"
+    verdicts = load_answer(source, EXAMINE_SCHEMA, {VERDICTS: []})[VERDICTS]
+    found = objections(cards, verdicts)
+    write_json(debate_dir / f"for-{author}-r2.json", found)
+    return {f"for_{author}_r2": len(found), f"{examiner}_r1_present": source.exists()}
 
 
 if __name__ == "__main__":

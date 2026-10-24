@@ -14,7 +14,9 @@ skills/
 ├── cross-review/            # само ревью
 └── cross-review-setup/      # подготовка .cross-review/ в репозитории
 docs/plans/                  # планы работ с отметками о сделанном
-.github/workflows/test.yml   # CI: тесты скриптов, ruff, проверка манифестов
+.github/workflows/test.yml   # CI: тесты скриптов, ruff, wemake-python-styleguide, проверка манифестов
+.claude/hooks/session-start.sh  # SessionStart-хук облачной сессии Claude Code: ставит ruff и wemake-python-styleguide
+setup.cfg                    # настройки flake8 для wemake-python-styleguide
 ```
 
 `cross-review-setup` зовёт `cross_config.py setup` первого скила через
@@ -54,8 +56,27 @@ skills/cross-review/
     ├── debate_outcome.py    # исход и итоговая severity по каждому пункту → final.json
     ├── debate_moderators.py # слияние двух независимых модераторов
     ├── debate_report.py     # страница отчёта из final.json
+    ├── crossreview/         # пакет, в котором живёт логика скриптов (ниже)
     └── tests/               # unittest скриптов, фикстуры — синтетические прогоны
 ```
+
+Скрипты — тонкие CLI: разбор аргументов и одна строка JSON. Их логика лежит в пакете
+`scripts/crossreview/`, модули в нём сгруппированы префиксом по стадии:
+
+| Модули | Что в них |
+| --- | --- |
+| `errors`, `jsonio`, `keys`, `schema`, `json_schema`, `events`, `severities`, `cli` | общее: ошибка конфигурации, вывод JSON, имена полей формата прогона, проверка по схеме, events.jsonl, аргументы CLI |
+| `config_*`, `layers`, `links`, `texts`, `models`, `agent_models`, `selection`, `describe`, `setup_layer` | `cross_config.py`: слои конфигурации, модели, `show`, `setup`, `sides` |
+| `runs`, `prior`, `history`, `run_new`, `compose`, `finder_prompts` | `review_run.py`: каталог прогона, прошлые прогоны, промты агентов |
+| `collect`, `finder_answers`, `agent_logs` | `review_collect.py` |
+| `stage_run`, `synth_*` | `review_synth.py` и общее для синтеза и проверки |
+| `verify_*`, `report_md`, `report_lines` | `review_verify.py` и report.md |
+| `debate_*`, `moderation` | `debate_build.py`, `debate_prompts.py`, `debate_round2.py`, `debate_moderators.py` |
+| `outcome_*` | `debate_outcome.py` |
+| `report_page`, `report_schema` | `debate_report.py` |
+
+Каталог пакета не попадает в `scripts/*.py`, поэтому `tests/test_cli.py` проверяет контракт CLI только у
+самих скриптов.
 
 Агент вызывает только скрипты: ответы моделей он не разбирает и не сливает руками. Поэтому
 правила стадий — дедупликация, пересчёт confidence, маршрутизация вердиктов, исходы спора — живут
@@ -120,7 +141,12 @@ skills/cross-review/
 - аргументы разбирает `argparse`: `-h`/`--help` печатает справку и выходит с кодом 0, неверные
   аргументы — справка в stderr и код 2;
 - результат — одна JSON-строка в stdout, файлы пишутся только в каталог прогона;
-- комментарии в Python и bash — по-русски, отступ — 4 пробела.
+- комментарии в Python и bash — по-русски, отступ — 4 пробела;
+- код проходит [wemake-python-styleguide](https://wemake-python-styleguide.readthedocs.io/) с порогами
+  по умолчанию: функции короткие, не больше 5 локальных переменных, модуль — не больше 7 функций и
+  классов. Новая логика ложится в модуль пакета `crossreview/` своей стадии, а когда модуль упирается
+  в предел — в соседний модуль с тем же префиксом. Игноры в `setup.cfg` есть только у тестов, у каждого
+  там записана причина.
 
 `scripts/codex_run.sh` должен работать в bash 3.2 из macOS. Под `set -u` пустой массив там
 раскрывается только как `${arr[@]+"${arr[@]}"}`, а ассоциативных массивов и `mapfile` нет.
@@ -132,6 +158,7 @@ skills/cross-review/
 ```sh
 python3 -B -m unittest discover -s skills/cross-review/scripts/tests
 ruff check .
+flake8 .
 bash -n skills/cross-review/scripts/codex_run.sh
 python3 .github/scripts/check_manifests.py
 claude plugin validate .claude-plugin/plugin.json
@@ -140,11 +167,21 @@ claude plugin validate .
 
 Проверьте тесты на самой старой поддерживаемой версии — 3.9. Если локальный `python3` новее,
 поставьте 3.9 рядом, например `brew install python@3.9`, и запустите той же командой через
-`python3.9`. CI гоняет 3.9 и 3.13 на Linux и macOS.
+`python3.9`. CI гоняет 3.9 и 3.14 на Linux и macOS.
+
+`flake8 .` — это wemake-python-styleguide 1.8.1 с настройками из `setup.cfg`. Ему нужен Python 3.10+,
+поэтому он ставится отдельно от скриптов:
+
+```sh
+uv tool install --python 3.14 flake8 --with wemake-python-styleguide==1.8.1
+```
+
+В облачной сессии Claude Code его ставит SessionStart-хук, в CI он идёт в job `lint`.
 
 Как устроены тесты:
 
-- скрипт запускается как CLI через `subprocess`, внутренние функции импортируются напрямую;
+- скрипт запускается как CLI через `subprocess`, внутренние функции импортируются напрямую из пакета
+  `crossreview`;
 - общие помощники — в `scripts/tests/support.py`;
 - фикстуры в `scripts/tests/fixtures/` — синтетические прогоны в формате прогона. Реальные данные
   ревью туда не копируются;

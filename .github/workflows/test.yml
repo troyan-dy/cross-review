@@ -18,9 +18,9 @@ jobs:
       matrix:
         include:
           - { os: ubuntu-latest, python: "3.9" }
-          - { os: ubuntu-latest, python: "3.13" }
+          - { os: ubuntu-latest, python: "3.14" }
           # macOS держит bash 3.2 — на нём должен работать codex_run.sh
-          - { os: macos-latest, python: "3.13" }
+          - { os: macos-latest, python: "3.14" }
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -37,8 +37,11 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - name: ruff
-        run: pipx run ruff==0.9.3 check .
+        run: pipx run ruff==0.17.2 check .
+      # плагин flake8, нужен Python 3.10+; настройки — в setup.cfg
+      - name: wemake-python-styleguide
+        run: pipx run --spec wemake-python-styleguide==1.8.1 flake8 .
       - name: manifests
         run: python .github/scripts/check_manifests.py

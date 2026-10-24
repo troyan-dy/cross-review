@@ -2,6 +2,15 @@
 
 Формат — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), версии — [semver](https://semver.org/lang/ru/).
 
+## [Unreleased]
+
+### Изменено
+
+- Логика скриптов скила переехала в пакет `scripts/crossreview/`, скрипты стали тонкими CLI. Аргументы,
+  вывод и форматы файлов прогона прежние.
+- Код скриптов и тестов проходит wemake-python-styleguide без нарушений; CI проверяет его в job `lint`,
+  SessionStart-хук ставит его рядом с ruff. Рантайм по-прежнему Python 3.9+ и только stdlib.
+
 ## [0.1.0] — 2026-10-21
 
 Первый публичный выпуск.
@@ -18,4 +27,5 @@
 - PR GitHub и MR GitLab как предмет ревью через `gh` и `glab`.
 - Маркетплейс Claude Code в том же репозитории: `claude plugin marketplace add troyan-dy/cross-review`.
 
+[Unreleased]: https://github.com/troyan-dy/cross-review/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/troyan-dy/cross-review/releases/tag/v0.1.0
