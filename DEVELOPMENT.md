@@ -15,6 +15,7 @@ skills/
 └── cross-review-setup/      # подготовка .cross-review/ в репозитории
 docs/plans/                  # планы работ с отметками о сделанном
 .github/workflows/test.yml   # CI: тесты скриптов, ruff, проверка манифестов
+.claude/hooks/session-start.sh  # SessionStart-хук облачной сессии Claude Code: ставит ruff
 ```
 
 `cross-review-setup` зовёт `cross_config.py setup` первого скила через
@@ -140,7 +141,7 @@ claude plugin validate .
 
 Проверьте тесты на самой старой поддерживаемой версии — 3.9. Если локальный `python3` новее,
 поставьте 3.9 рядом, например `brew install python@3.9`, и запустите той же командой через
-`python3.9`. CI гоняет 3.9 и 3.13 на Linux и macOS.
+`python3.9`. CI гоняет 3.9 и 3.14 на Linux и macOS.
 
 Как устроены тесты:
 
