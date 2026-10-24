@@ -55,8 +55,27 @@ skills/cross-review/
     ├── debate_outcome.py    # исход и итоговая severity по каждому пункту → final.json
     ├── debate_moderators.py # слияние двух независимых модераторов
     ├── debate_report.py     # страница отчёта из final.json
+    ├── crossreview/         # пакет, в котором живёт логика скриптов (ниже)
     └── tests/               # unittest скриптов, фикстуры — синтетические прогоны
 ```
+
+Скрипты — тонкие CLI: разбор аргументов и одна строка JSON. Их логика лежит в пакете
+`scripts/crossreview/`, модули в нём сгруппированы префиксом по стадии:
+
+| Модули | Что в них |
+| --- | --- |
+| `errors`, `jsonio`, `keys`, `schema`, `json_schema`, `events`, `severities`, `cli` | общее: ошибка конфигурации, вывод JSON, имена полей формата прогона, проверка по схеме, events.jsonl, аргументы CLI |
+| `config_*`, `layers`, `links`, `texts`, `models`, `agent_models`, `selection`, `describe`, `setup_layer` | `cross_config.py`: слои конфигурации, модели, `show`, `setup`, `sides` |
+| `runs`, `prior`, `history`, `run_new`, `compose`, `finder_prompts` | `review_run.py`: каталог прогона, прошлые прогоны, промты агентов |
+| `collect`, `finder_answers`, `agent_logs` | `review_collect.py` |
+| `stage_run`, `synth_*` | `review_synth.py` и общее для синтеза и проверки |
+| `verify_*`, `report_md`, `report_lines` | `review_verify.py` и report.md |
+| `debate_*`, `moderation` | `debate_build.py`, `debate_prompts.py`, `debate_round2.py`, `debate_moderators.py` |
+| `outcome_*` | `debate_outcome.py` |
+| `report_page`, `report_schema` | `debate_report.py` |
+
+Каталог пакета не попадает в `scripts/*.py`, поэтому `tests/test_cli.py` проверяет контракт CLI только у
+самих скриптов.
 
 Агент вызывает только скрипты: ответы моделей он не разбирает и не сливает руками. Поэтому
 правила стадий — дедупликация, пересчёт confidence, маршрутизация вердиктов, исходы спора — живут
@@ -145,7 +164,8 @@ claude plugin validate .
 
 Как устроены тесты:
 
-- скрипт запускается как CLI через `subprocess`, внутренние функции импортируются напрямую;
+- скрипт запускается как CLI через `subprocess`, внутренние функции импортируются напрямую из пакета
+  `crossreview`;
 - общие помощники — в `scripts/tests/support.py`;
 - фикстуры в `scripts/tests/fixtures/` — синтетические прогоны в формате прогона. Реальные данные
   ревью туда не копируются;

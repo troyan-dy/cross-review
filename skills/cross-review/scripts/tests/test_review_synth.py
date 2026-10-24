@@ -7,7 +7,7 @@ from pathlib import Path
 
 from support import composed_run, last_json_line, read_json, run, write_json
 
-from review_synth import combine, droppable
+from crossreview.synth_rules import combine, droppable
 
 AGENTS = ("bugs-claude", "bugs-codex", "arch-claude", "arch-codex")
 

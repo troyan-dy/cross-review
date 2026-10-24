@@ -9,7 +9,8 @@ from pathlib import Path
 
 from support import FIXTURES, SCRIPTS, composed_run, copy_fixture, git, git_init, last_json_line, read_json, run
 
-import debate_prompts
+from crossreview.debate_context import tree_state
+from crossreview.debate_panel import panel_sentence
 
 SUBJECT = "MR !42 `feature/DEMO-1` (диапазон a1b2c3..d4e5f6)"
 PROMPT_FILES = [
@@ -348,14 +349,14 @@ class RefTest(PromptsCase):
         ]
         for ref, expected in cases:
             with self.subTest(ref=ref):
-                note = debate_prompts.tree_state(str(self.repo), ref)
+                note = tree_state(str(self.repo), ref)
                 self.assertTrue(note.startswith(f"The working tree is `master` at `{new}`."), note)
                 self.assertIn(expected, note)
         (self.repo / "a.txt").write_text("changed\n")
-        self.assertIn(", with uncommitted changes.", debate_prompts.tree_state(str(self.repo), None))
+        self.assertIn(", with uncommitted changes.", tree_state(str(self.repo), None))
 
     def test_репозиторий_без_коммитов(self) -> None:
-        note = debate_prompts.tree_state(str(git_init(self.root / "empty")), None)
+        note = tree_state(str(git_init(self.root / "empty")), None)
         self.assertTrue(note.startswith("The working tree is `"), note)
         self.assertIn(", with no commit yet", note)
 
@@ -462,7 +463,7 @@ class PanelTest(unittest.TestCase):
         ]
         for label, given, expected in cases:
             with self.subTest(case=label):
-                self.assertEqual(debate_prompts.panel_sentence(given), expected)
+                self.assertEqual(panel_sentence(given), expected)
 
 
 if __name__ == "__main__":

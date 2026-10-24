@@ -7,7 +7,7 @@ from pathlib import Path
 
 from support import FIXTURES, copy_fixture, last_json_line, read_json, run, write_json
 
-import debate_build
+from crossreview import debate_inputs
 
 STATUSES = {
     "bugs-claude-1": "confirmed",
@@ -165,7 +165,7 @@ class DebateBuildTest(unittest.TestCase):
         cases = [("[DB-1] Потеря записи", "[DB-1]"), ("Без тега", ""), ("[незакрытый тег", ""), ("", "")]
         for title, expected in cases:
             with self.subTest(title=title):
-                self.assertEqual(debate_build.tag(title), expected)
+                self.assertEqual(debate_inputs.tag(title), expected)
 
     def test_покрытие_сырой_находки(self) -> None:
         kept = [{"id": "a-1", "file": "x.py", "line": 10, "title": "[T-1] заголовок", "sources": ["a"]}]
@@ -178,10 +178,10 @@ class DebateBuildTest(unittest.TestCase):
         ]
         for name, raw, expected in cases:
             with self.subTest(name):
-                self.assertIs(debate_build.covered(raw, kept), expected)
+                self.assertIs(debate_inputs.covered(raw, kept), expected)
 
     def test_нет_events_значит_нет_списка_отброшенных(self) -> None:
-        self.assertIsNone(debate_build.dropped_from_events(self.root / "events.jsonl"))
+        self.assertIsNone(debate_inputs.dropped_from_events(self.root / "events.jsonl"))
 
 
 if __name__ == "__main__":

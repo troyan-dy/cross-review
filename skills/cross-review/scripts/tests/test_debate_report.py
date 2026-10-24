@@ -10,7 +10,7 @@ from pathlib import Path
 
 from support import copy_fixture, last_json_line, read_json, run, write_json
 
-import debate_report
+from crossreview.report_page import agents_word
 
 TITLE = "Перекрёстное ревью demo"
 PAYLOAD = "<img src=x onerror=alert(1)>"
@@ -304,7 +304,7 @@ class WordsTest(unittest.TestCase):
                  (21, "агент"), (22, "агента"), (0, "агентов")]
         for n, word in cases:
             with self.subTest(n=n):
-                self.assertEqual(debate_report.agents_word(n), word)
+                self.assertEqual(agents_word(n), word)
 
 
 if __name__ == "__main__":

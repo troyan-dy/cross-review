@@ -7,8 +7,12 @@ from pathlib import Path
 
 from support import SKILL, composed_run, copy_fixture, last_json_line, read_json, run, write_json
 
-import cross_config
-from cross_config import ConfigError, load_config, merge, resolve
+from crossreview import selection, texts
+from crossreview.config_load import load_config
+from crossreview.config_shape import merge
+from crossreview.errors import ConfigError
+from crossreview.layers import resolve
+from crossreview.models import claude_alias
 
 PLUGIN = SKILL / "assets" / "config"
 DEFAULTS = read_json(PLUGIN / "cross-review.json")
@@ -403,9 +407,9 @@ class SelectTest(unittest.TestCase):
 
     def test_пара_без_второй_модели(self) -> None:
         with self.assertRaises(ValueError):
-            cross_config.select(DEFAULTS, claude="opus")
+            selection.select(DEFAULTS, claude="opus")
         with self.assertRaises(ValueError):
-            cross_config.select(DEFAULTS, tier="expert", claude="opus", codex="gpt-6-sol")
+            selection.select(DEFAULTS, tier="expert", claude="opus", codex="gpt-6-sol")
 
 
 
@@ -421,24 +425,24 @@ class TextTest(RepoCase):
         ]
         for text, want in cases:
             with self.subTest(text=text):
-                self.assertEqual(cross_config.strip_front_matter(text), want)
+                self.assertEqual(texts.strip_front_matter(text), want)
 
     def test_body_берёт_слой_репозитория(self) -> None:
-        self.assertTrue(cross_config.body(self.repo, "lenses", "bugs").startswith("## Lens: bugs\n"))
+        self.assertTrue(texts.body(self.repo, "lenses", "bugs").startswith("## Lens: bugs\n"))
         self.layer("lenses/bugs.md", "---\ndescription: своя\n---\n## Lens: bugs\n\nСвоя линза.\n")
-        self.assertEqual(cross_config.body(self.repo, "lenses", "bugs"), "## Lens: bugs\n\nСвоя линза.")
+        self.assertEqual(texts.body(self.repo, "lenses", "bugs"), "## Lens: bugs\n\nСвоя линза.")
 
     def test_подстановка(self) -> None:
         values = {"SCOPE": "/run/input/scope.md", "GOAL": "none provided"}
-        self.assertEqual(cross_config.render("{{SCOPE}} и {{GOAL}}, {{SCOPE}}", values, "review"),
+        self.assertEqual(texts.render("{{SCOPE}} и {{GOAL}}, {{SCOPE}}", values, "review"),
                          "/run/input/scope.md и none provided, /run/input/scope.md")
-        self.assertEqual(cross_config.render("{{SCOPE}}", {"SCOPE": "текст с {{message}}"}, "review"),
+        self.assertEqual(texts.render("{{SCOPE}}", {"SCOPE": "текст с {{message}}"}, "review"),
                          "текст с {{message}}")
-        self.assertEqual(cross_config.render("{{ SCOPE }} и {scope}", values, "review"), "{{ SCOPE }} и {scope}")
+        self.assertEqual(texts.render("{{ SCOPE }} и {scope}", values, "review"), "{{ SCOPE }} и {scope}")
 
     def test_неизвестный_плейсхолдер_ошибка(self) -> None:
         with self.assertRaises(ConfigError) as caught:
-            cross_config.render("{{SCOPE}} {{TICKET}}", {"SCOPE": "x"}, "prompts/review.md")
+            texts.render("{{SCOPE}} {{TICKET}}", {"SCOPE": "x"}, "prompts/review.md")
         self.assertIn("prompts/review.md: unknown placeholder {{TICKET}}", str(caught.exception))
         self.assertIn("{{SCOPE}}", str(caught.exception))
 
@@ -561,10 +565,10 @@ class SidesTest(RepoCase):
                  ("claude-fable-5-1[1m]", "fable"), ("claude-haiku-5-5", "haiku")]
         for model, alias in cases:
             with self.subTest(model=model):
-                self.assertEqual(cross_config.claude_alias(model), alias)
+                self.assertEqual(claude_alias(model), alias)
         for model in ("gpt-6.1-sol", "claude-mystery-1", "opus-5", "claude-"):
             with self.subTest(model=model), self.assertRaises(ConfigError):
-                cross_config.claude_alias(model)
+                claude_alias(model)
 
 
 if __name__ == "__main__":

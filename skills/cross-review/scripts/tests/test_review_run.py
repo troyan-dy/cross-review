@@ -9,8 +9,9 @@ from pathlib import Path
 
 from support import FIXTURES, SCRIPTS, SKILL, copy_fixture, git, git_init, last_json_line, read_json, run, write_json
 
-import review_run
-from cross_config import ConfigError
+from crossreview import runs
+from crossreview.prior import prior_runs
+from crossreview.errors import ConfigError
 
 RUNS = Path(".cross-review") / "runs"
 SCHEMA = SKILL / "assets" / "config" / "schemas" / "finder.json"
@@ -355,7 +356,7 @@ class ComposeTest(ComposeCase):
         self.assertEqual((manifest["task"], manifest["run"], manifest["tier"]), ("demo", "01-initial", "standard"))
         self.assertEqual(manifest["scope_path"], str(self.input / "scope.md"))
         self.assertEqual(manifest["workdir"], str(self.repo))
-        self.assertIsNotNone(review_run.parse_time(manifest["started_at"]))
+        self.assertIsNotNone(runs.parse_time(manifest["started_at"]))
         self.assertEqual(manifest["models"], {"claude": {"model": "opus", "effort": "high"},
                                               "codex": {"model": "gpt-6.1-sol", "effort": "high"}})
         self.assertEqual([(a["name"], a["executor"], a["requested_model"], a["effort"], a["lenses"]) for a in manifest["agents"]], [
@@ -444,20 +445,20 @@ class HistoryTest(unittest.TestCase):
         ]
         for value, want in cases:
             with self.subTest(value=value):
-                self.assertEqual(review_run.parse_time(value).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), want)
+                self.assertEqual(runs.parse_time(value).astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%MZ"), want)
         for value in ("", None, "вчера"):
             with self.subTest(value=value):
-                self.assertIsNone(review_run.parse_time(value))
+                self.assertIsNone(runs.parse_time(value))
 
     def test_фикстура_читается_как_прошлый_прогон(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             task_dir = Path(tmp) / "demo"
             copy_fixture("run-basic", task_dir / "01-initial")
-            self.assertEqual(review_run.prior_runs(task_dir), [])
+            self.assertEqual(prior_runs(task_dir), [])
             write_json(task_dir / "01-initial" / "manifest.json", {"task": "demo"})
-            [prior] = review_run.prior_runs(task_dir)
+            [prior] = prior_runs(task_dir)
             self.assertEqual(prior["started_at"], read_json(FIXTURES / "run-basic" / "findings.json")["stats"]["started_at"])
-            self.assertEqual(review_run.prior_runs(task_dir, current="01-initial"), [])
+            self.assertEqual(prior_runs(task_dir, current="01-initial"), [])
 
     def test_ссылка_среди_прогонов_или_внутри_прогона_ошибка(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -467,14 +468,14 @@ class HistoryTest(unittest.TestCase):
             # висячая ссылка — не каталог и не файл, но тоже ссылка
             (task_dir / "02-old").symlink_to(Path(tmp) / "missing")
             with self.assertRaisesRegex(ConfigError, "02-old: a symlink in the repository's .cross-review/"):
-                review_run.prior_runs(task_dir)
+                prior_runs(task_dir)
             (task_dir / "02-old").unlink()
             (task_dir / "01-initial" / "stages" / "1-found.json").unlink()
             (task_dir / "01-initial" / "stages" / "1-found.json").symlink_to(Path(tmp) / "planted.json")
             with self.assertRaisesRegex(ConfigError, "1-found.json: a symlink in the repository's .cross-review/"):
-                review_run.prior_runs(task_dir)
+                prior_runs(task_dir)
             # текущий прогон не проверяется: его пишет сама сессия
-            self.assertEqual(review_run.prior_runs(task_dir, current="01-initial"), [])
+            self.assertEqual(prior_runs(task_dir, current="01-initial"), [])
 
 
 if __name__ == "__main__":

@@ -5,10 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from support import SKILL, composed_run, last_json_line, read_json, run
+from support import SCRIPTS, SKILL, composed_run, last_json_line, read_json, run
 
-import review_collect
-from review_collect import check_schema, extract_json
+from crossreview.agent_logs import LIMIT_MARKERS
+from crossreview.jsonio import extract_json
+from crossreview.schema import check_schema
 
 AGENTS = ("bugs-claude", "bugs-codex", "arch-claude", "arch-codex")
 SCHEMA = read_json(SKILL / "assets" / "config" / "schemas" / "finder.json")
@@ -293,8 +294,8 @@ class SchemaTest(unittest.TestCase):
             extract_json("ничего похожего")
 
     def test_маркеры_лимита_как_у_codex_run(self) -> None:
-        script = (review_collect.Path(review_collect.__file__).parent / "codex_run.sh").read_text()
-        for marker in review_collect.LIMIT_MARKERS:
+        script = (SCRIPTS / "codex_run.sh").read_text()
+        for marker in LIMIT_MARKERS:
             with self.subTest(marker=marker):
                 self.assertIn(f'"{marker}"', script)
 

@@ -7,7 +7,8 @@ from pathlib import Path
 
 from support import composed_run, last_json_line, read_json, run, write_json
 
-from review_verify import group, label
+from crossreview.verify_groups import group
+from crossreview.verify_labels import label
 
 AGENTS = ("bugs-claude", "bugs-codex", "arch-claude", "arch-codex")
 RUN_KEYS = ["scope", "sources", "findings", "open_questions", "pre_existing", "immaterial", "stats"]

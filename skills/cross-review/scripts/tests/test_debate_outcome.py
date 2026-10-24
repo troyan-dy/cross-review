@@ -7,7 +7,9 @@ from pathlib import Path
 
 from support import copy_fixture, last_json_line, read_json, run, write_json
 
-import debate_outcome
+from crossreview.outcome_judge import severity_shift
+from crossreview.outcome_markdown import plural
+from crossreview.outcome_words import SET_ASIDE
 
 
 def verdict(fid: str, stance: str, severity: str) -> dict:
@@ -135,7 +137,7 @@ class OutcomesTest(OutcomeCase):
                 summary = self.outcome(d)
                 item = self.items(d)[fid]
                 self.assertEqual((item["outcome"], item["final_severity"]), (outcome, final))
-                kept = "none" if item["status"] in debate_outcome.SET_ASIDE else item["severity"]
+                kept = "none" if item["status"] in SET_ASIDE else item["severity"]
                 self.assertEqual(item["severity_shift"], {"from": kept, "to": final, "direction": direction, "by": by})
                 self.assertIs(item["moderated"], moderated is not None)
                 self.assertIs(fid in summary["needs_moderator"], outcome == "disputed" and moderated is None)
@@ -442,7 +444,7 @@ class ReprioritizedTest(OutcomeCase):
             with self.subTest(id=fid):
                 shift = item["severity_shift"]
                 self.assertEqual(set(shift), {"from", "to", "direction", "by"})
-                kept = "none" if item["status"] in debate_outcome.SET_ASIDE else item["severity"]
+                kept = "none" if item["status"] in SET_ASIDE else item["severity"]
                 self.assertEqual((shift["from"], shift["to"]), (kept, item["final_severity"]))
                 self.assertIn(shift["direction"], ("raised", "lowered", "same", "dropped"))
                 self.assertEqual(shift["by"] == "none", shift["direction"] == "same")
@@ -471,7 +473,7 @@ class PluralTest(unittest.TestCase):
                  (12, "12 пунктов"), (14, "14 пунктов"), (21, "21 пункт"), (22, "22 пункта"), (111, "111 пунктов")]
         for n, want in cases:
             with self.subTest(n=n):
-                self.assertEqual(debate_outcome.plural(n, "пункт", "пункта", "пунктов"), want)
+                self.assertEqual(plural(n, "пункт", "пункта", "пунктов"), want)
 
 
 class SeverityShiftTest(unittest.TestCase):
@@ -485,7 +487,7 @@ class SeverityShiftTest(unittest.TestCase):
         ]
         for base, final, by, want in cases:
             with self.subTest(base=base, final=final):
-                self.assertEqual(debate_outcome.severity_shift(base, final, by), want)
+                self.assertEqual(severity_shift(base, final, by), want)
 
 
 class PipelineTest(OutcomeCase):
