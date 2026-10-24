@@ -14,8 +14,9 @@ skills/
 ├── cross-review/            # само ревью
 └── cross-review-setup/      # подготовка .cross-review/ в репозитории
 docs/plans/                  # планы работ с отметками о сделанном
-.github/workflows/test.yml   # CI: тесты скриптов, ruff, проверка манифестов
-.claude/hooks/session-start.sh  # SessionStart-хук облачной сессии Claude Code: ставит ruff
+.github/workflows/test.yml   # CI: тесты скриптов, ruff, wemake-python-styleguide, проверка манифестов
+.claude/hooks/session-start.sh  # SessionStart-хук облачной сессии Claude Code: ставит ruff и wemake-python-styleguide
+setup.cfg                    # настройки flake8 для wemake-python-styleguide
 ```
 
 `cross-review-setup` зовёт `cross_config.py setup` первого скила через
@@ -140,7 +141,12 @@ skills/cross-review/
 - аргументы разбирает `argparse`: `-h`/`--help` печатает справку и выходит с кодом 0, неверные
   аргументы — справка в stderr и код 2;
 - результат — одна JSON-строка в stdout, файлы пишутся только в каталог прогона;
-- комментарии в Python и bash — по-русски, отступ — 4 пробела.
+- комментарии в Python и bash — по-русски, отступ — 4 пробела;
+- код проходит [wemake-python-styleguide](https://wemake-python-styleguide.readthedocs.io/) с порогами
+  по умолчанию: функции короткие, не больше 5 локальных переменных, модуль — не больше 7 функций и
+  классов. Новая логика ложится в модуль пакета `crossreview/` своей стадии, а когда модуль упирается
+  в предел — в соседний модуль с тем же префиксом. Игноры в `setup.cfg` есть только у тестов, у каждого
+  там записана причина.
 
 `scripts/codex_run.sh` должен работать в bash 3.2 из macOS. Под `set -u` пустой массив там
 раскрывается только как `${arr[@]+"${arr[@]}"}`, а ассоциативных массивов и `mapfile` нет.
@@ -152,6 +158,7 @@ skills/cross-review/
 ```sh
 python3 -B -m unittest discover -s skills/cross-review/scripts/tests
 ruff check .
+flake8 .
 bash -n skills/cross-review/scripts/codex_run.sh
 python3 .github/scripts/check_manifests.py
 claude plugin validate .claude-plugin/plugin.json
@@ -161,6 +168,15 @@ claude plugin validate .
 Проверьте тесты на самой старой поддерживаемой версии — 3.9. Если локальный `python3` новее,
 поставьте 3.9 рядом, например `brew install python@3.9`, и запустите той же командой через
 `python3.9`. CI гоняет 3.9 и 3.14 на Linux и macOS.
+
+`flake8 .` — это wemake-python-styleguide 1.8.1 с настройками из `setup.cfg`. Ему нужен Python 3.10+,
+поэтому он ставится отдельно от скриптов:
+
+```sh
+uv tool install --python 3.14 flake8 --with wemake-python-styleguide==1.8.1
+```
+
+В облачной сессии Claude Code его ставит SessionStart-хук, в CI он идёт в job `lint`.
 
 Как устроены тесты:
 

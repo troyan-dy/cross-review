@@ -40,5 +40,8 @@ jobs:
           python-version: "3.14"
       - name: ruff
         run: pipx run ruff==0.17.2 check .
+      # плагин flake8, нужен Python 3.10+; настройки — в setup.cfg
+      - name: wemake-python-styleguide
+        run: pipx run --spec wemake-python-styleguide==1.8.1 flake8 .
       - name: manifests
         run: python .github/scripts/check_manifests.py
