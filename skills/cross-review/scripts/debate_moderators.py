@@ -16,74 +16,89 @@ prints {"error": ...} and exits 1.
 
 from __future__ import annotations
 
-import argparse
-import json
 import sys
 from pathlib import Path
+from typing import NamedTuple
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from debate_prompts import DECISIONS_SCHEMA, EXTRA_SCHEMA, MODERATE_SCHEMA, load_answer  # noqa: E402
+from crossreview import cli  # noqa: E402
+from crossreview.debate_schemas import DECISIONS_SCHEMA, EXTRA_SCHEMA, MODERATE_SCHEMA, load_answer  # noqa: E402
+from crossreview.jsonio import emit, fail, write_json  # noqa: E402
+from crossreview.moderation import merge_decision, merge_extra  # noqa: E402
 
-RANK = {"critical": 0, "major": 1, "minor": 2, "none": 3}
+ID = "id"
+
+
+class Answers(NamedTuple):
+    """Both moderators' decisions and extras, by id."""
+
+    claude: dict[str, dict]
+    codex: dict[str, dict]
+    extra_claude: dict[str, dict]
+    extra_codex: dict[str, dict]
+
+    def decisions(self) -> list[dict]:
+        """Every dispute either moderator answered, merged, in id order."""
+        disputed = sorted({*self.claude, *self.codex})
+        return [
+            merge_decision(dispute, self.claude.get(dispute), self.codex.get(dispute))
+            for dispute in disputed
+        ]
+
+    def extras(self) -> list[dict]:
+        """The side findings both moderators confirmed, merged, in id order."""
+        confirmed = sorted(set(self.extra_claude) & set(self.extra_codex))
+        return [
+            merge_extra(side_id, self.extra_claude[side_id], self.extra_codex[side_id])
+            for side_id in confirmed
+        ]
 
 
 def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("debate_dir", help="the debate directory with both moderators' outputs")
-    args = ap.parse_args(argv)
-    d = Path(args.debate_dir).resolve()
+    """Write moderator.json and extra.json and print the ids by outcome; a broken answer is {"error": ...}, exit 1."""
+    root = cli.parser(__doc__)
+    root.add_argument("debate_dir", help="the debate directory with both moderators' outputs")
+    debate_dir = Path(root.parse_args(argv).debate_dir).resolve()
     try:
-        claude_out = load_answer(d / "moderator-claude.json", DECISIONS_SCHEMA, [])
-        codex_out = load_answer(d / "moderator-codex.json", MODERATE_SCHEMA, {})
-        extra_claude_out = load_answer(d / "extra-claude.json", EXTRA_SCHEMA, [])
-    except ValueError as e:
-        print(json.dumps({"error": str(e)}, ensure_ascii=False))
-        return 1
-    claude = {m["id"]: m for m in claude_out}
-    codex = {m["id"]: m for m in codex_out.get("decisions", [])}
-    extra_claude = {e["id"]: e for e in extra_claude_out}
-    extra_codex = {e["id"]: e for e in codex_out.get("extra", [])}
-
-    merged, split, missing = [], [], []
-    for fid in sorted(set(claude) | set(codex)):
-        a, b = claude.get(fid), codex.get(fid)
-        if a is None or b is None:
-            missing.append(fid)
-            m = a if a is not None else codex[fid]
-            merged.append({"id": fid, "verdict": f"ответил только один модератор ({'Claude' if a else 'Codex'}): {m['verdict']}; решает человек",
-                           "severity": m["severity"], "note": m["note"], "missing": True})
-            continue
-        stands_a, stands_b = a["severity"] != "none", b["severity"] != "none"
-        stricter = min((a["severity"], b["severity"]), key=lambda s: RANK[s])
-        note = f"Модератор Claude: {a['note']}\n\nМодератор Codex: {b['note']}"
-        if stands_a == stands_b:
-            verdict = a["verdict"] if a["verdict"] == b["verdict"] else f"оба модератора: {a['verdict']} / {b['verdict']}"
-            if a["severity"] != b["severity"]:
-                verdict += f"; серьёзность разошлась ({a['severity']} / {b['severity']}), берём строже"
-            merged.append({"id": fid, "verdict": verdict, "severity": stricter, "note": note})
-        else:
-            split.append(fid)
-            merged.append({"id": fid, "verdict": f"модераторы разошлись: Claude — {a['verdict']}, Codex — {b['verdict']}; решает человек",
-                           "severity": stricter, "note": note, "split": True})
-    extra = []
-    for eid in sorted(set(extra_claude) & set(extra_codex)):
-        e = dict(extra_claude[eid])
-        sev_a, sev_b = extra_claude[eid]["severity"], extra_codex[eid]["severity"]
-        e["severity"] = min((sev_a, sev_b), key=lambda s: RANK[s])
-        e["note"] = f"Модератор Claude: {extra_claude[eid].get('note', '')}\n\nМодератор Codex: {extra_codex[eid].get('note', '')}"
-        if sev_a != sev_b:
-            e["note"] += f"\n\nСерьёзность разошлась ({sev_a} / {sev_b}), берём строже."
-        side = (e.get("vendors") or e.get("sources") or [eid.split("-side-", 1)[0]])[0]
-        e["sources"] = e.get("sources") or [side]
-        e["vendors"] = e.get("vendors") or [side]
-        extra.append(e)
-    (d / "moderator.json").write_text(json.dumps(merged, ensure_ascii=False, indent=2) + "\n")
-    (d / "extra.json").write_text(json.dumps(extra, ensure_ascii=False, indent=2) + "\n")
-    print(json.dumps({"decided": [m["id"] for m in merged if m["id"] not in split and m["id"] not in missing],
-                      "split": split, "missing": missing, "extra": [e["id"] for e in extra],
-                      "extra_rejected_by_one": sorted(set(extra_claude) ^ set(extra_codex))}, ensure_ascii=False))
+        answers = _answers(debate_dir)
+    except ValueError as error:
+        return fail(str(error))
+    decisions = answers.decisions()
+    extra = answers.extras()
+    write_json(debate_dir / "moderator.json", decisions)
+    write_json(debate_dir / "extra.json", extra)
+    emit(_summary(answers, decisions, extra))
     return 0
+
+
+def _answers(debate_dir: Path) -> Answers:
+    claude = load_answer(debate_dir / "moderator-claude.json", DECISIONS_SCHEMA, [])
+    codex = load_answer(debate_dir / "moderator-codex.json", MODERATE_SCHEMA, {})
+    extra_claude = load_answer(debate_dir / "extra-claude.json", EXTRA_SCHEMA, [])
+    return Answers(
+        claude=_by_id(claude),
+        codex=_by_id(codex.get("decisions", [])),
+        extra_claude=_by_id(extra_claude),
+        extra_codex=_by_id(codex.get("extra", [])),
+    )
+
+
+def _by_id(entries: list[dict]) -> dict[str, dict]:
+    return {entry[ID]: entry for entry in entries}
+
+
+def _summary(answers: Answers, decisions: list[dict], extra: list[dict]) -> dict:
+    split = [decision[ID] for decision in decisions if decision.get("split")]
+    missing = [decision[ID] for decision in decisions if decision.get("missing")]
+    open_ids = {*split, *missing}
+    return {
+        "decided": [decision[ID] for decision in decisions if decision[ID] not in open_ids],
+        "split": split,
+        "missing": missing,
+        "extra": [entry[ID] for entry in extra],
+        "extra_rejected_by_one": sorted(set(answers.extra_claude) ^ set(answers.extra_codex)),
+    }
 
 
 if __name__ == "__main__":
