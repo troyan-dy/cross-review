@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import unittest
 from pathlib import Path
 
 TESTS = Path(__file__).resolve().parent
@@ -26,8 +27,9 @@ os.environ["GIT_CONFIG_NOSYSTEM"] = "1"
 
 def git(repo: Path, *args: str) -> str:
     """Run git in repo with a throwaway identity and return its stdout; a failure raises."""
-    return subprocess.run(["git", "-C", str(repo), "-c", "user.name=test", "-c", "user.email=test@example.com", *args],
-                          capture_output=True, text=True, check=True).stdout
+    identity = ("-c", "user.name=test", "-c", "user.email=test@example.com")
+    argv = ["git", "-C", str(repo), *identity, *args]
+    return subprocess.run(argv, capture_output=True, text=True, check=True).stdout
 
 
 def git_init(path: Path, commit: bool = False) -> Path:
@@ -41,8 +43,9 @@ def git_init(path: Path, commit: bool = False) -> Path:
 
 def run(script: str, *args: object, cwd: Path | None = None) -> subprocess.CompletedProcess:
     """Run scripts/<script>.py with the current interpreter and capture its output."""
-    return subprocess.run([sys.executable, "-B", str(SCRIPTS / f"{script}.py"), *map(str, args)],
-                          capture_output=True, text=True, cwd=cwd)
+    script_path = SCRIPTS / f"{script}.py"
+    argv = [sys.executable, "-B", str(script_path), *map(str, args)]
+    return subprocess.run(argv, capture_output=True, text=True, cwd=cwd)
 
 
 def copy_fixture(name: str, dest: Path) -> Path:
@@ -55,9 +58,27 @@ def read_json(path: Path):
     return json.loads(path.read_text())
 
 
-def write_json(path: Path, data: object) -> None:
+def write_json(path: Path, payload: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+    text = json.dumps(payload, ensure_ascii=False, indent=2)
+    path.write_text(f"{text}\n")
+
+
+def assert_fields(case: unittest.TestCase, mapping: dict, **fields: object) -> None:
+    """mapping holds these fields with these values; its other keys are not checked."""
+    case.assertEqual({key: mapping[key] for key in fields}, fields)
+
+
+def pick(mapping: dict, *keys: str) -> tuple:
+    """The values of mapping under keys, in that order, for one assertEqual."""
+    return tuple(mapping[key] for key in keys)
+
+
+def single(entries: list) -> object:
+    """The one entry of a list; a list of any other length fails the test."""
+    if len(entries) != 1:
+        raise AssertionError(f"expected one entry, got {len(entries)}: {entries!r}")
+    return entries[0]
 
 
 def last_json_line(stdout: str) -> dict:
@@ -71,7 +92,8 @@ def composed_run(root: Path, config: dict | None = None) -> Path:
     repo = git_init(root / "repo")
     if config is not None:
         write_json(repo / ".cross-review" / "cross-review.json", config)
-    run_dir = Path(last_json_line(run("review_run", "new", repo, "--task", "demo").stdout)["run_dir"])
+    created = last_json_line(run("review_run", "new", repo, "--task", "demo").stdout)
+    run_dir = Path(created["run_dir"])
     (run_dir / "input" / "scope.md").write_text("`git diff master`\n")
     res = run("review_run", "compose", run_dir)
     if res.returncode != 0:
